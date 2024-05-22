@@ -5,16 +5,14 @@ import tqdm
 import uuid
 import numpy as np
 import torch
-import faiss
 import logging
 import pandas as pd
-from transformers import AutoTokenizer, AutoModel
-from beir.datasets.data_loader import GenericDataLoader
+from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassification
 from beir.retrieval.evaluation import EvaluateRetrieval
 from beir.retrieval.search.lexical import BM25Search
 from beir.retrieval.search.lexical.elastic_search import ElasticSearch
 
-logging.basicConfig(level=logging.INFO) 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def get_random_doc_id():
@@ -35,7 +33,8 @@ class BM25:
             self.max_ret_topk = 1000
             self.retriever = EvaluateRetrieval(
                 BM25Search(index_name=index_name, hostname='localhost', initialize=False, number_of_shards=1),
-                k_values=[self.max_ret_topk])
+                k_values=[self.max_ret_topk],
+            )
 
     def retrieve(
         self,
@@ -68,16 +67,18 @@ class BM25:
         # retrieve
         results: Dict[str, Dict[str, Tuple[float, str]]] = self.retriever.retrieve(
             None, dict(zip(range(len(queries)), queries)), disable_tqdm=True)
-
         # prepare outputs
         docids: List[str] = []
+        doc_titles: List[str] = []
         docs: List[str] = []
         for qid, query in enumerate(queries):
             _docids: List[str] = []
             _docs: List[str] = []
+            _doc_titles: List[str] = []
             if qid in results:
-                for did, (score, text) in results[qid].items():
+                for did, (score, title, text) in results[qid].items():
                     _docids.append(did)
+                    _doc_titles.append(title)
                     _docs.append(text)
                     if len(_docids) >= topk:
                         break
@@ -85,11 +86,13 @@ class BM25:
                 _docids += [get_random_doc_id() for _ in range(topk - len(_docids))]
                 _docs += [''] * (topk - len(_docs))
             docids.extend(_docids)
+            doc_titles.extend(_doc_titles)
             docs.extend(_docs)
 
         docids = np.array(docids).reshape(bs, topk)  # (bs, topk)
+        doc_titles = np.array(doc_titles).reshape(bs, topk)  # (bs, topk)
         docs = np.array(docs).reshape(bs, topk)  # (bs, topk)
-        return docids, docs
+        return docids, doc_titles, docs
 
 
 def bm25search_search(self, corpus: Dict[str, Dict[str, str]], queries: Dict[str, str], top_k: int, *args, **kwargs) -> Dict[str, Dict[str, float]]:
@@ -112,8 +115,8 @@ def bm25search_search(self, corpus: Dict[str, Dict[str, str]], queries: Dict[str
             top_hits=top_k)
         for (query_id, hit) in zip(query_ids_batch, results):
             scores = {}
-            for corpus_id, score, text in hit['hits']:
-                scores[corpus_id] = (score, text)
+            for corpus_id, score, title, text in hit['hits']:
+                scores[corpus_id] = (score, title, text)
                 final_results[query_id] = scores
 
     return final_results
@@ -160,7 +163,7 @@ def elasticsearch_lexical_multisearch(self, texts: List[str], top_hits: int, ski
 
         hits = []
         for hit in responses:
-            hits.append((hit["_id"], hit['_score'], hit['_source']['txt']))
+            hits.append((hit["_id"], hit['_score'],  hit['_source']['title'], hit['_source']['txt']))
 
         result.append(self.hit_template(es_res=resp, hits=hits))
     return result
@@ -191,12 +194,12 @@ def elasticsearch_hit_template(self, es_res: Dict[str, object], hits: List[Tuple
 ElasticSearch.hit_template = elasticsearch_hit_template
 
 class SGPT:
-    cannot_encode_id = [6799132, 6799133, 6799134, 6799135, 6799136, 6799137, 6799138, 6799139, 8374206, 8374223, 9411956, 
+    cannot_encode_id = [6799132, 6799133, 6799134, 6799135, 6799136, 6799137, 6799138, 6799139, 8374206, 8374223, 9411956,
         9885952, 11795988, 11893344, 12988125, 14919659, 16890347, 16898508]
     # 这些向量是 SGPT 不能 encode 的，设置为全 0 向量，点积为 0，不会影响检索
 
     def __init__(
-        self, 
+        self,
         model_name_or_path,
         sgpt_encode_file_path,
         passage_file
@@ -251,7 +254,7 @@ class SGPT:
                 tp2 = tp[sz:, :]
                 self.p_reps.append((tp1.cuda(i), get_norm(tp1).cuda(i)))
                 self.p_reps.append((tp2.cuda(i), get_norm(tp2).cuda(i)))
-            
+
         docs_file = passage_file
         df = pd.read_csv(docs_file, delimiter='\t')
         self.docs = list(df['text'])
@@ -259,7 +262,7 @@ class SGPT:
 
     def tokenize_with_specb(self, texts, is_query):
         # Tokenize without padding
-        batch_tokens = self.tokenizer(texts, padding=False, truncation=True)   
+        batch_tokens = self.tokenizer(texts, padding=False, truncation=True)
         # Add special brackets & pay attention to them
         for seq, att in zip(batch_tokens["input_ids"], batch_tokens["attention_mask"]):
             if is_query:
@@ -306,8 +309,8 @@ class SGPT:
         return embeddings
 
     def retrieve(
-        self, 
-        queries: List[str], 
+        self,
+        queries: List[str],
         topk: int = 1,
     ):
         q_reps = self.get_weightedmean_embedding(
@@ -343,3 +346,90 @@ class SGPT:
                 ret.append(psg)
             psgs.append(ret)
         return psgs
+
+
+class BGEReranker:
+    def __init__(self, model_name_or_path, index_name='wiki'):
+        logger.info(f"Loading BGE model from {model_name_or_path}")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path).to(device)
+        self.model.eval()
+        self.bm25_retriever = BM25(
+            tokenizer=self.tokenizer,
+            index_name=index_name,
+            engine="elasticsearch",
+        )
+
+    def retrieve(
+        self,
+        queries,
+        recall_num=100,
+        topk=5,
+        batch_size=256,
+    ):
+        """
+        Retrieve the top-N passages from the index.
+        Args:
+            queries list[str]: A list of queries.
+            recall_num (int): The number of passages to BM25 retriever.
+            topk (int): The number of passages to return.
+            verbose (bool): Whether to print the retrieved passages.
+        Returns:
+
+        """
+        docids, doc_titles, docs = self.bm25_retriever.retrieve(
+            queries = queries,
+            topk = recall_num,
+        )
+        bs = len(queries)
+        reranker_docids: List[str] = []
+        reranker_doc_titles: List[str] = []
+        reranker_docs: List[str] = []
+
+        for qid, query in tqdm.tqdm(enumerate(queries)):
+            docids_tmp = docids[qid].tolist()
+            doc_titles_tmp = doc_titles[qid].tolist()
+            docs_tmp = docs[qid].tolist()
+            pairs = [[query, doc] for doc in docs_tmp]
+            with torch.no_grad():
+                inputs = self.tokenizer(pairs, padding=True, truncation=True, return_tensors='pt', max_length=512)
+                # load inputs to deivce
+                inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+                # Reasoning based on batch size
+                batch_size = min(batch_size, len(inputs['input_ids']))
+                scores = []
+                for i in range(0, len(inputs['input_ids']), batch_size):
+                    inputs_batch = {k: v[i:i+batch_size] for k, v in inputs.items()}
+                    batch_scores = self.model(**inputs_batch, return_dict=True).logits.view(-1, ).float()
+                    scores.append(batch_scores)
+
+                scores = torch.cat(scores, dim=0)
+                idxs = scores.argsort()[-topk:].tolist()
+                idxs.reverse()
+
+                reranker_docids.append([docids_tmp[idx] for idx in idxs])
+                reranker_doc_titles.append([doc_titles_tmp[idx] for idx in idxs])
+                reranker_docs.append([docs_tmp[idx] for idx in idxs])
+
+        reranker_docids = np.array(reranker_docids).reshape(bs, topk)
+        reranker_doc_titles = np.array(reranker_doc_titles).reshape(bs, topk)
+        reranker_docs = np.array(reranker_docs).reshape(bs, topk)
+        return reranker_docids, reranker_doc_titles, reranker_docs
+
+if __name__ == "__main__":
+    model_name_or_path = '/home/liuyh0916/models/open_models/bge-reranker-base'
+    index_name = 'wiki'
+
+    # tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    # retriever = BM25(
+    #     tokenizer = tokenizer,
+    #     index_name = "wiki",
+    #     engine = "elasticsearch",
+    # )
+    queries = [
+        'Which country the director of film One Law For The Woman is from?',
+        'hello, I love you',
+    ]
+    retriever = BGEReranker(model_name_or_path, index_name=index_name)
+    docs = retriever.retrieve(queries, topk=5)

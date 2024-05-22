@@ -1,17 +1,18 @@
 {
     "model_name_or_path": "/home/liuyh0916/models/open_models/llama-2-7b-chat-hf",
-    "method": "token",
+    "bge_model_name_or_path": "/home/liuyh0916/models/open_models/bge-reranker-base",
+    "method": "seq_confidence",
     "dataset": "hotpotqa",
     "data_path": "datasets/hotpotqa",
     "fewshot": 8,
     "sample": 1000,
     "shuffle": false,
     "generate_max_length": 100,
-    "query_formulation": "direct",
-    "output_dir": "results/FLARE/llama2_7b_chat_2wikimultihopqa",
-    "retriever": "BM25",
+    "query_formulation": "forward_all",
+    "output_dir": "results/SeqRAG/llama2_7b_chat_hotpotqa",
+    "retriever": "BGEReranker",
     "es_index_name": "wiki",
     "retrieve_topk": 3,
-    "hallucination_threshold": 0.08,
+    "hallucination_threshold": 0.65,
     "use_counter": true
 }

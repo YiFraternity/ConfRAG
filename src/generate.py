@@ -1,13 +1,14 @@
+import re
 import numpy as np
 import logging
 import spacy
 import torch
 from math import exp
 from scipy.special import softmax
-from retriever import BM25, SGPT
+from retriever import BM25, SGPT, BGEReranker
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 
-logging.basicConfig(level=logging.INFO) 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 nlp = spacy.load("en_core_web_sm")
@@ -19,13 +20,13 @@ class BasicGenerator:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
         self.model_config = AutoConfig.from_pretrained(model_name_or_path,
                     trust_remote_code = "falcon" in model_name_or_path)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name_or_path, device_map="auto", 
+        self.model = AutoModelForCausalLM.from_pretrained(model_name_or_path, device_map="auto",
                     trust_remote_code = "falcon" in model_name_or_path)
         if self.model_config.model_type == "llama":
             self.space_token = "▁"
         else:
             self.space_token = self.tokenizer.tokenize(' ')[0]
-        
+
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -37,10 +38,10 @@ class BasicGenerator:
 
         if return_logprobs:
             outputs = self.model.generate(
-                input_ids = input_ids, 
+                input_ids = input_ids,
                 attention_mask = attention_mask,
-                max_new_tokens = max_length, 
-                return_dict_in_generate = True, 
+                max_new_tokens = max_length,
+                return_dict_in_generate = True,
                 output_scores = True,
             )
             transition_scores = self.model.compute_transition_scores(
@@ -54,17 +55,17 @@ class BasicGenerator:
             logprobs = [p.cpu().numpy() for p in logprobs]
             assert len(tokens) == len(logprobs)
             return text, tokens, logprobs
-        
+
         else:
             outputs = self.model.generate(
-                input_ids = input_ids, 
-                max_new_tokens = max_length, 
+                input_ids = input_ids,
+                max_new_tokens = max_length,
                 attention_mask = attention_mask,
             )
             generated_tokens = outputs[:, input_length:]
             text = self.tokenizer.decode(generated_tokens[0])
             return text, None, None
-    
+
     def generate_attn(self, input_text, max_length, solver="max", use_entropy = False, use_logprob = False):
         input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
         input_ids = input_ids.to(self.model.device)
@@ -72,10 +73,10 @@ class BasicGenerator:
         attention_mask = torch.ones_like(input_ids)
 
         outputs = self.model.generate(
-            input_ids = input_ids, 
+            input_ids = input_ids,
             attention_mask = attention_mask,
-            max_new_tokens = max_length, 
-            return_dict_in_generate = True, 
+            max_new_tokens = max_length,
+            return_dict_in_generate = True,
             output_scores = True,
         )
         generated_tokens = outputs.sequences[:, input_length:]
@@ -92,7 +93,7 @@ class BasicGenerator:
 
         # attention
         atten = self.model(generated_tokens, output_attentions=True).attentions[-1][0]
-        if solver == "max": 
+        if solver == "max":
             mean_atten, _ = torch.max(atten, dim=1)
             mean_atten = torch.mean(mean_atten, dim=0)
         elif solver == "avg":
@@ -107,7 +108,7 @@ class BasicGenerator:
         if mean_atten.shape[0] > 1 and tokens[0] == '</s>':
             mean_atten = mean_atten / sum(mean_atten[1:]).item()
         # mean_atten = mean_atten[tl:tr]
-            
+
         # regular tokens
         seqlist = []
         attns = []
@@ -143,9 +144,9 @@ class BasicGenerator:
             seqentropies = []
             for r in range_:
                 entropyseq = sum(entropies[r[0]:r[1]+1]) / (r[1] - r[0] + 1)
-                seqentropies.append(entropyseq) 
+                seqentropies.append(entropyseq)
         else:
-            seqentropies = None 
+            seqentropies = None
 
         return text, seqlist, attns, seqlogprobs, seqentropies
 
@@ -167,17 +168,17 @@ class Counter:
 
     def calc(self, other_counter):
         return {
-            "retrieve_count": self.retrieve - other_counter.retrieve, 
+            "retrieve_count": self.retrieve - other_counter.retrieve,
             "generate_count": self.generate - other_counter.generate,
-            "hallucinated_count": self.hallucinated - other_counter.hallucinated, 
-            "token_count": self.token - other_counter.token, 
-            "sentence_count": self.sentence - other_counter.sentence 
+            "hallucinated_count": self.hallucinated - other_counter.hallucinated,
+            "token_count": self.token - other_counter.token,
+            "sentence_count": self.sentence - other_counter.sentence
         }
-         
+
 
 class BasicRAG:
     def __init__(self, args):
-        args = args.__dict__ 
+        args = args.__dict__
         for k, v in args.items():
             setattr(self, k, v)
         self.generator = BasicGenerator(self.model_name_or_path)
@@ -186,39 +187,52 @@ class BasicRAG:
             if self.retriever_type == "BM25":
                 # gpt2_tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
                 self.retriever = BM25(
-                    tokenizer = self.generator.tokenizer, 
-                    index_name = "wiki" if "es_index_name" not in args else self.es_index_name, 
+                    tokenizer = self.generator.tokenizer,
+                    index_name = "wiki" if "es_index_name" not in args else self.es_index_name,
                     engine = "elasticsearch",
                 )
             elif self.retriever_type == "SGPT":
                 self.retriever = SGPT(
-                    model_name_or_path = self.sgpt_model_name_or_path, 
+                    model_name_or_path = self.sgpt_model_name_or_path,
                     sgpt_encode_file_path = self.sgpt_encode_file_path,
                     passage_file = self.passage_file
                 )
+            elif self.retriever_type == "BGEReranker":
+                self.retriever = BGEReranker(
+                    model_name_or_path = self.bge_model_name_or_path,
+                    index_name = "wiki" if "es_index_name" not in args else self.es_index_name,
+                )
             else:
                 raise NotImplementedError
-        
+
         self.counter = Counter()
 
     def retrieve(self, query, topk=1, max_query_length=64):
         self.counter.retrieve += 1
         if self.retriever_type == "BM25":
-            _docs_ids, docs = self.retriever.retrieve(
-                queries = [query], 
-                topk = topk, 
+            _docs_ids, _doc_titles, docs = self.retriever.retrieve(
+                queries = [query],
+                topk = topk,
                 max_query_length = max_query_length,
             )
             return docs[0]
         elif self.retriever_type == "SGPT":
             docs = self.retriever.retrieve(
-                queries = [query], 
+                queries = [query],
                 topk = topk,
             )
-            return docs[0] 
+            return docs[0]
+        elif self.retriever_type == "BGEReranker":
+            _docs_ids, _doc_titles, docs = self.retriever.retrieve(
+                queries = [query],
+                recall_num = 100,
+                topk = topk,
+            )
+            return docs[0]
         else:
             raise NotImplementedError
-    
+
+
     def get_top_sentence(self, text):
         sentences = [sent.text.strip() for sent in nlp(text).sents]
         sentences = [sent for sent in sentences if len(sent) > 0]
@@ -227,8 +241,8 @@ class BasicRAG:
     def get_last_sentence(self, text):
         sentences = [sent.text.strip() for sent in nlp(text).sents]
         sentences = [sent for sent in sentences if len(sent) > 0]
-        return sentences[-1] if len(sentences) > 0 else "" 
-    
+        return sentences[-1] if len(sentences) > 0 else ""
+
     def inference(self, question, demo, case):
         # non-retrieval
         assert self.query_formulation == "direct"
@@ -238,12 +252,12 @@ class BasicRAG:
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
         return text
-    
+
 
 class SingleRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
-    
+
     def inference(self, question, demo, case):
         assert self.query_formulation == "direct"
         docs = self.retrieve(question, topk=self.retrieve_topk)
@@ -263,7 +277,7 @@ class SingleRAG(BasicRAG):
 class FixLengthRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
-    
+
     def inference(self, question, demo, case):
         assert self.query_formulation == "direct"
         text = ""
@@ -293,8 +307,8 @@ class FixLengthRAG(BasicRAG):
                 if len(sentences) == 0:
                     break
                 text = text.strip() + " " + str(sentences[0])
-            
-            # 判断 token 的个数要少于 generate_max_length 
+
+            # 判断 token 的个数要少于 generate_max_length
             tokens_count = len(self.generator.tokenizer.encode(text))
             if tokens_count > self.generate_max_length or len(text) <= old_len or "the answer is" in text:
                 break
@@ -304,16 +318,19 @@ class FixLengthRAG(BasicRAG):
 class TokenRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
+        self.sentence_solver = 'max'
 
     def modifier(self, text, tokens, logprobs):
         sentences = [sent.text.strip() for sent in nlp(text).sents]
         sentences = [sent for sent in sentences if len(sent) > 0]
-
-        tid = 0
+        if tokens == []:
+            tid = 0
+        else:
+            tid = 1
         for sid, sent in enumerate(sentences):
             pos = 0
             tr = tid
-            while tr < len(tokens):
+            while tr < len(tokens):   # 到第一个回车符或者空格为止
                 apr = sent[pos:].find(tokens[tr])
                 if apr == -1:
                     break
@@ -321,13 +338,16 @@ class TokenRAG(BasicRAG):
                 tr += 1
             probs = [1 - exp(v) for v in logprobs[tid:tr+1]]
             probs = np.array(probs)
-            p = {
-                "avg": np.mean,
-                "max": np.max,
-                "min": np.min,
-            }.get(self.sentence_solver, lambda x: 0)(probs)
+            if len(probs) == 0:
+                p = 0.
+            else:
+                p = {
+                    "avg": np.mean,
+                    "max": np.max,
+                    "min": np.min,
+                }.get(self.sentence_solver, lambda x: 0)(probs)
             if p > self.hallucination_threshold: # hallucination
-                # keep sentences before hallucination 
+                # keep sentences before hallucination
                 prev = "" if sid == 0 else " ".join(sentences[:sid-1])
                 # replace all hallucinated tokens in current sentence with [xxx]
                 curr = sentences[sid]
@@ -346,10 +366,10 @@ class TokenRAG(BasicRAG):
                         pos = apr + len(tok)
                 return prev, curr, True
             tid = tr + 1
-        
+
         # No hallucination
         return text, None, False
-    
+
     def inference(self, question, demo, case):
         # assert self.query_formulation == "direct"
         text = ""
@@ -358,8 +378,8 @@ class TokenRAG(BasicRAG):
             prompt = "".join([d["case"]+"\n" for d in demo])
             prompt += case + " " + text
             new_text, tokens, logprobs = self.generator.generate(
-                prompt, 
-                self.generate_max_length, 
+                prompt,
+                self.generate_max_length,
                 return_logprobs=True
             )
             if self.use_counter == True:
@@ -368,10 +388,11 @@ class TokenRAG(BasicRAG):
             if not hallucination:
                 text = text.strip() + " " + new_text.strip()
             else:
+                curr = curr.replace("[xxx]", "")
                 if self.query_formulation == "direct":
-                    retrieve_question = curr.replace("[xxx]", "")
+                    retrieve_question = curr
                 elif self.query_formulation == "forward_all":
-                    tmp_all = [question, text, ptext]
+                    tmp_all = [question, ptext, curr]
                     retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
                 else:
                     raise NotImplemented
@@ -388,18 +409,18 @@ class TokenRAG(BasicRAG):
                     self.counter.add_generate(new_text, self.generator.tokenizer)
                     self.counter.hallucinated += 1
                 text = text.strip() + " " + ptext.strip() + " " + new_text.strip()
-            
-            # 判断 token 的个数要少于 generate_max_length 
+
+            # 判断 token 的个数要少于 generate_max_length
             tokens_count = len(self.generator.tokenizer.encode(text))
             if tokens_count > self.generate_max_length or len(text) <= old_len or "the answer is" in text:
                 break
         return text
-    
+
 
 class EntityRAG(TokenRAG):
     def __init__(self, args):
         super().__init__(args)
-    
+
     def modifier(self, text, tokens, logprobs):
         sentences = [sent.text.strip() for sent in nlp(text).sents]
         sentences = [sent for sent in sentences if len(sent) > 0]
@@ -409,7 +430,7 @@ class EntityRAG(TokenRAG):
             doc = nlp(sent)
             li = [ent.text for ent in doc.ents]
             entity.append(li)
-        
+
         belonging = [-1] * len(text)
         pos = 0
         for tid, tok in enumerate(tokens):
@@ -418,7 +439,7 @@ class EntityRAG(TokenRAG):
             for j in range(pos, apr+len(tok)):
                 belonging[j] = tid
             pos = apr + len(tok)
-        
+
         entity_intv = []
         for sid, sent in enumerate(sentences):
             tmp = []
@@ -456,7 +477,7 @@ class EntityRAG(TokenRAG):
                 "min": np.min,
             }.get(self.sentence_solver, lambda x: 0)(probs)
             if p > self.hallucination_threshold: # hallucination
-                # keep sentences before hallucination 
+                # keep sentences before hallucination
                 prev = "" if sid == 0 else " ".join(sentences[:sid-1])
                 # replace all hallucinated entities in current sentence with [xxx]
                 curr = sentences[sid]
@@ -479,7 +500,7 @@ class EntityRAG(TokenRAG):
 class AttnWeightRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
-    
+
     def modifier(self, text, tokens, attentions, weight):
         sentences = [sent.text.strip() for sent in nlp(text).sents]
         sentences = [sent for sent in sentences if len(sent) > 0]
@@ -498,13 +519,13 @@ class AttnWeightRAG(BasicRAG):
             # value = attenion * (-log prob)
             attns = attentions[tl:tr]
             attns = np.array(attns) / sum(attns)
-            value = [attns[i-tl] * weight[i] * (tr-tl) for i in range(tl, tr)] 
+            value = [attns[i-tl] * weight[i] * (tr-tl) for i in range(tl, tr)]
             thres = [1 if v > self.hallucination_threshold else 0 for v in value]
             if 1 in thres:
                 # hallucinated
                 if "check_real_words" in self.__dict__ and self.check_real_words:
                     doc = nlp(sent)
-                    real_words = set(token.text for token in doc if token.pos_ in 
+                    real_words = set(token.text for token in doc if token.pos_ in
                         ['NOUN', 'ADJ', 'VERB', 'PROPN', 'NUM'])
                     def match(tok):
                         for word in real_words:
@@ -513,8 +534,8 @@ class AttnWeightRAG(BasicRAG):
                         return False
                     for i in range(len(thres)):
                         if not match(tokens[tl+i]):
-                            thres[i] = 0                
-                
+                            thres[i] = 0
+
                 prev = "" if sid == 0 else " ".join(sentences[:sid-1])
                 # curr = " ".join(
                 #     [tokens[i] if thres[i] == 0 else "[xxx]" for i in range(len(thres))]
@@ -566,7 +587,7 @@ class AttnWeightRAG(BasicRAG):
     #         if att.shape[0] > 1:
     #             att = att / sum(att[1:]).item()
     #         attns.append(att)
-            
+
     #     # 计算每个超过阈值的 token 在前文的 attentions
     #     forward_attns = torch.zeros(tr - tl)
     #     hit_cnt = 0
@@ -596,7 +617,7 @@ class AttnWeightRAG(BasicRAG):
     #         for tok, att in zip(tokens[tl:tr], forward_attns):
     #             if att in topk_attn:
     #                 topk_token.append(tok)
-        
+
     #     final_text = " ".join(topk_token)
     #     if "retrieve_query_type" in self.__dict__ and self.retrieve_query_type == "top_k_and_current":
     #         mask_curr = " ".join(
@@ -641,7 +662,7 @@ class AttnWeightRAG(BasicRAG):
             if att.shape[0] > 1:
                 att = att / sum(att[1:]).item()
             attns.append(att)
-            
+
         # 计算每个超过阈值的 token 在前文的 attentions
         forward_attns = torch.zeros(tr - tl)
         hit_cnt = 0
@@ -654,26 +675,26 @@ class AttnWeightRAG(BasicRAG):
 
         # 分析词性，保留实词对应的 attns
         doc = nlp(all_text)
-        real_words = set(token.text for token in doc if token.pos_ in 
+        real_words = set(token.text for token in doc if token.pos_ in
                       ['NOUN', 'ADJ', 'VERB', 'PROPN', 'NUM'])
-        
+
         def match(token):
             for word in real_words:
                 if word in token:
                     return True
             return False
-        
+
         real_pairs = []
         for i in range(len(tokens)):
             tok, att = tokens[i], forward_attns[i]
             if match(tok):
                 real_pairs.append((att, tok, i))
-        
+
         if "retrieve_keep_top_k" in self.__dict__:
             top_k = min(self.retrieve_keep_top_k, len(real_pairs))
         elif "retrieve_keep_ratio" in self.__dict__:
             top_k = int(len(real_pairs) * self.retrieve_keep_ratio)
-        
+
         real_pairs = sorted(real_pairs, key = lambda x:x[0])
         real_pairs = real_pairs[:top_k]
         real_pairs = sorted(real_pairs, key = lambda x:x[2])
@@ -692,10 +713,10 @@ class AttnWeightRAG(BasicRAG):
             # print('####', prompt)
             # prompt += case + " " + text
             new_text, tokens, attns, logprobs, entropies = self.generator.generate_attn(
-                prompt, 
-                self.generate_max_length, 
-                # self.attention_solver, 
-                use_entropy = self.method == "dragin", 
+                prompt,
+                self.generate_max_length,
+                # self.attention_solver,
+                use_entropy = self.method == "dragin",
                 use_logprob = self.method == "attn_prob"
             )
             weight = entropies if self.method == "dragin" else [-v for v in logprobs]
@@ -703,7 +724,7 @@ class AttnWeightRAG(BasicRAG):
             if self.use_counter == True:
                 self.counter.add_generate(new_text, self.generator.tokenizer)
             hallucination, ptext, curr_tokens, curr_hit =  self.modifier(new_text, tokens, attns, weight)
-            
+
             if not hallucination:
                 text = text.strip() + " " + new_text.strip()
             else:
@@ -728,21 +749,21 @@ class AttnWeightRAG(BasicRAG):
 
                 elif self.query_formulation == "forward_all":
                     retrieve_question = forward_all
-                
+
                 elif self.query_formulation == "last_sentence":
                     retrieve_question = self.get_last_sentence(forward_all)
-                
+
                 elif self.query_formulation == "last_n_tokens":
                     assert "retrieve_keep_top_k" in self.__dict__
                     retrieve_question = fetch_last_n_tokens(
                         forward_all, self.retrieve_keep_top_k)
-                
-                elif self.query_formulation == "real_words": 
+
+                elif self.query_formulation == "real_words":
                     retrieve_question = self.keep_real_words(
-                        prev_text = question + " " + text + " " + ptext, 
-                        curr_tokens = curr_tokens, 
+                        prev_text = question + " " + text + " " + ptext,
+                        curr_tokens = curr_tokens,
                         curr_hit = curr_hit,
-                    ) 
+                    )
                 else:
                     raise NotImplemented
 
@@ -769,13 +790,128 @@ class AttnWeightRAG(BasicRAG):
                 # print(retrieve_question)
                 # context = "### Context: ###\n"
                 # for i, doc in enumerate(docs):
-                #     context += f"[{i+1}] {doc}\n" 
+                #     context += f"[{i+1}] {doc}\n"
                 # print(context)
                 # print(text)
-            
-            # 判断 token 的个数要少于 generate_max_length 
+
+            # 判断 token 的个数要少于 generate_max_length
             tokens_count = len(self.generator.tokenizer.encode(text))
             if tokens_count > self.generate_max_length or len(text) <= old_len or "the answer is" in text:
                 break
         # print("#" * 20)
+        return text
+
+
+class SeqConfidenceRAG(BasicRAG):
+    def __init__(self, args):
+        super().__init__(args)
+
+    def modifier(self, question, ptext, text):
+        """
+        按模型对新生成的内容判断自信度进行修改。删除置信度不高的文本
+
+        return:
+            confidence_scores: list of float, the confidence score for each sentence
+            new_text: str, the new text with the highest confidence score
+            hallucination: bool, whether the new text is hallucinated
+        """
+        hallucination = False
+
+        sentences = [sent.text.strip() for sent in nlp(text).sents]
+        sentences = [sent for sent in sentences if len(sent) > 0]
+
+        confidence_prompt = """Below you'll find contexts submitted by the user along with the responses your own generated. You should provide a confidence level for your responses, rated on a scale from 0 to 1. A higher score reflects a greater level of confidence in the accuracy of the generated responses. Please include your confidence estimate with each response you provide. \n`Context:`{context}\n`Response:`{response}\n`Confidence:`"""
+
+        confidence_prompts = []
+        context = ''.join([question, ptext])
+        for i, sent in enumerate(sentences):
+            if i > 0:
+                context += sentences[i-1]
+            conf_tmp = confidence_prompt.format(context=context, response=sent)
+            confidence_prompts.append(conf_tmp)
+        confidences = []
+        for prompt in confidence_prompts:
+            new_text, _, _ = self.generator.generate(
+                prompt,
+                5,
+                return_logprobs=False
+            )
+            confidences.append(new_text)
+
+        confidence_scores = []
+        for conf in confidences:
+            tmp = re.findall(r"\d+\.?\d*", conf)
+            if len(tmp) > 0:
+                tmp_num = float(tmp[0])
+                if tmp_num > 1:
+                    num_digits = len(str(int(tmp_num)))
+                    scale_factor = 10 ** num_digits
+                    tmp_num = min(1, tmp_num / scale_factor)
+                confidence_scores.append(tmp_num)
+            else:
+                confidence_scores.append(0.0)
+        idx = 0
+        texts = []
+        for idx, sent in enumerate(sentences):
+            if confidence_scores[idx] >= self.hallucination_threshold:
+                texts.append(sent)
+            else:
+                hallucination = True
+                texts.append('[xxx].')
+        modified_text = ' '.join(texts)
+        return sentences, confidence_scores, modified_text, hallucination
+
+    def inference(self, question, demo, case):
+        text = ""    # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
+        ptext = ""   # 用于存储之前生成所有的可用句子
+        docs = []
+        pre_seq_confidence = 0.
+        while True:
+            prompt = "".join([d["case"]+"\n" for d in demo])
+            if len(docs) > 0:
+                prompt += "Context:\n"
+                for i, doc in enumerate(docs):
+                    prompt += f"[{i+1}] {doc}\n"
+
+            prompt += "Answer in the same format as before.\n"
+            tmp_li = [case, ptext.strip()]
+            prompt += " ".join(s for s in tmp_li if len(s) > 0)
+
+            new_text, _, _ = self.generator.generate(prompt, self.generate_max_length)
+
+            if self.use_counter == True:
+                self.counter.add_generate(new_text, self.generator.tokenizer)
+
+            all_texts, seq_confidences, modified_texts, hallucination = self.modifier(question, ptext, new_text)
+            if hallucination:
+                forward_all = [question, ptext.strip(), modified_texts]
+                forward_all = " ".join(s for s in forward_all if len(s) > 0)
+                forward_all = forward_all.replace("[xxx].", " ")
+                if self.query_formulation == "forward_all":
+                    retrieve_question = forward_all
+                else:
+                    raise NotImplemented
+
+                docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+                docs = docs.tolist()
+                if self.use_counter == True:
+                    self.counter.hallucinated += 1
+
+            for i, sent in enumerate(all_texts):
+                if seq_confidences[i] >= self.hallucination_threshold:
+                    ptext += sent + " "
+                    text += sent + " "
+                else:
+                    pre_seq_confidence = seq_confidences[i]
+                    break
+
+            try:
+                if "the answer is" in text or seq_confidences[0] <= pre_seq_confidence:
+                    for i, sent in enumerate(all_texts):
+                        if sent not in text:
+                            text += sent + " "
+                    # IPython.embed()
+                    break
+            except:
+                break
         return text
