@@ -39,8 +39,6 @@ def regenerate_answer(cot, tokenizer, model, case, demo):
     cot += " So the answer is "
     prompt = "".join([d["case"]+"\n" for d in demo])
     prompt += case + " " + cot
-    import IPython
-    IPython.embed()
     input_ids = tokenizer.encode(prompt, return_tensors="pt")
     input_ids = input_ids.to(model.device)
     input_length = input_ids.shape[1]

@@ -7,6 +7,8 @@ from math import exp
 from scipy.special import softmax
 from retriever import BM25, SGPT, BGEReranker
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+from examples import TUTOR_ADVICE_EXAMPLES, REFLECT_EXAMPLES
+from prompts import *
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -806,12 +808,80 @@ class SeqConfidenceRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
-    def modifier(self, question, ptext, text):
+    def _get_seq_confs_(self, question, context, response):
+        contxt = ' '.join([question.strip(), context.strip()])
+        conf_prompt = CONFIDENCE_TEMPLATE.format(
+            context=contxt,
+            response=response,
+        )
+        new_text, _, _ = self.generator.generate(
+            conf_prompt,
+            5,
+            return_logprobs=False
+        )
+
+        tmp = re.findall(r"\d+\.?\d*", new_text)
+        if len(tmp) > 0:
+            confs = float(tmp[0])
+            if confs > 1:
+                num_digits = len(str(int(confs)))
+                scale_factor = 10 ** num_digits
+                confs = min(1, confs / scale_factor)
+        else:
+            confs = 0.0
+        return confs
+
+    def _reflection_(self, question, context, response, advice_examples='', reflect_examples=''):
+        """
+        # 反思需要两次生成
+        # 1. tutor-advice: 用于指导从哪个层面思考
+        # 2. Refine: 用于提升回复的质量
+        """
+
+        tutor_data = {
+            "header": TUTOR_ADVICE_HEADER,
+            "examples": advice_examples,
+            "middle": TUTOR_ADVICE_MIDDLE,
+            "question": question,
+            "context": context,
+            "response": response,
+        }
+
+        advice_prompt = ADVICE_TEMPLATE.format(**tutor_data)
+        advice, _, _ = self.generator.generate(
+            advice_prompt,
+            50,
+            return_logprobs=False
+        )
+        advice = advice.strip()
+        # import IPython
+        # IPython.embed()
+
+        reft_prompt = {
+            "header": REFLECTION_HEADER,
+            "examples": reflect_examples,
+            "middle": REFLECTION_MIDDLE,
+            "question": question,
+            "context": context,
+            "response": response,
+            "tutor_ins": advice,
+        }
+        reflect_prompt = REFLECTION_TEMPLATE.format(**reft_prompt)
+        reflect, _, _ = self.generator.generate(
+            reflect_prompt,
+            50,
+            return_logprobs=False,
+        )
+        # import IPython
+        # IPython.embed()
+        return reflect.strip()
+
+    def modifier(self, question, ptext, text, adv_examples='', ref_examples=''):
         """
         按模型对新生成的内容判断自信度进行修改。删除置信度不高的文本
 
         return:
-            confidence_scores: list of float, the confidence score for each sentence
+            confs_socres: list of float, the confidence score for each sentence
             new_text: str, the new text with the highest confidence score
             hallucination: bool, whether the new text is hallucinated
         """
@@ -820,46 +890,36 @@ class SeqConfidenceRAG(BasicRAG):
         sentences = [sent.text.strip() for sent in nlp(text).sents]
         sentences = [sent for sent in sentences if len(sent) > 0]
 
-        confidence_prompt = """Below you'll find contexts submitted by the user along with the responses your own generated. You should provide a confidence level for your responses, rated on a scale from 0 to 1. A higher score reflects a greater level of confidence in the accuracy of the generated responses. Please include your confidence estimate with each response you provide. \n`Context:`{context}\n`Response:`{response}\n`Confidence:`"""
-
-        confidence_prompts = []
-        context = ''.join([question, ptext])
+        confs_socres = []
+        context = ptext + ' '
+        modified_texts = []
         for i, sent in enumerate(sentences):
+            modify_text = sent
             if i > 0:
                 context += sentences[i-1]
-            conf_tmp = confidence_prompt.format(context=context, response=sent)
-            confidence_prompts.append(conf_tmp)
-        confidences = []
-        for prompt in confidence_prompts:
-            new_text, _, _ = self.generator.generate(
-                prompt,
-                5,
-                return_logprobs=False
-            )
-            confidences.append(new_text)
-
-        confidence_scores = []
-        for conf in confidences:
-            tmp = re.findall(r"\d+\.?\d*", conf)
-            if len(tmp) > 0:
-                tmp_num = float(tmp[0])
-                if tmp_num > 1:
-                    num_digits = len(str(int(tmp_num)))
-                    scale_factor = 10 ** num_digits
-                    tmp_num = min(1, tmp_num / scale_factor)
-                confidence_scores.append(tmp_num)
-            else:
-                confidence_scores.append(0.0)
-        idx = 0
-        texts = []
-        for idx, sent in enumerate(sentences):
-            if confidence_scores[idx] >= self.hallucination_threshold:
-                texts.append(sent)
-            else:
+            confs = self._get_seq_confs_(question, context, sent)
+            # 自己调试
+            # if i != 1:
+            #     confs = 0.7
+            # else:
+            #     confs = 0.7
+            if confs < self.reflection_threshold and confs >= self.hallucination_threshold:
+                print(f'cur confs:{confs}, performed reflect')
+                reft_text = self._reflection_(question, context, sent, advice_examples=adv_examples, reflect_examples=ref_examples)
+                reft_cons = self._get_seq_confs_(question, context, reft_text)
+                if reft_cons >= confs:
+                    modify_text = sent
+                    confs = reft_cons
+            elif confs < self.hallucination_threshold:
+                print(f'cur confs:{confs}, performed hullucination')
                 hallucination = True
-                texts.append('[xxx].')
-        modified_text = ' '.join(texts)
-        return sentences, confidence_scores, modified_text, hallucination
+                modify_text = "[xxx]."
+
+            modified_texts.append(modify_text)
+            confs_socres.append(confs)
+        modified_text = ' '.join(modified_texts)
+
+        return sentences, confs_socres, modified_text, hallucination
 
     def inference(self, question, demo, case):
         text = ""    # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
@@ -879,10 +939,14 @@ class SeqConfidenceRAG(BasicRAG):
 
             new_text, _, _ = self.generator.generate(prompt, self.generate_max_length)
 
+            # import IPython
+            # IPython.embed()
             if self.use_counter == True:
                 self.counter.add_generate(new_text, self.generator.tokenizer)
 
-            all_texts, seq_confidences, modified_texts, hallucination = self.modifier(question, ptext, new_text)
+            all_texts, seq_confidences, modified_texts, hallucination = self.modifier(question, ptext, new_text, adv_examples=TUTOR_ADVICE_EXAMPLES, ref_examples=REFLECT_EXAMPLES)
+            # import IPython
+            # IPython.embed()
             if hallucination:
                 forward_all = [question, ptext.strip(), modified_texts]
                 forward_all = " ".join(s for s in forward_all if len(s) > 0)
@@ -893,12 +957,14 @@ class SeqConfidenceRAG(BasicRAG):
                     raise NotImplemented
 
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+                # import IPython
+                # IPython.embed()
                 docs = docs.tolist()
                 if self.use_counter == True:
                     self.counter.hallucinated += 1
 
             for i, sent in enumerate(all_texts):
-                if seq_confidences[i] >= self.hallucination_threshold:
+                if seq_confidences[i] >= self.reflection_threshold:
                     ptext += sent + " "
                     text += sent + " "
                 else:

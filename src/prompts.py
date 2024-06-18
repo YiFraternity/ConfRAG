@@ -1,0 +1,39 @@
+CONFIDENCE_TEMPLATE = """I will provide you with a specific context and your response. Please rate your response to indicate your confidence level in its accuracy. The rating scale ranges from 0 to 1, where a score closer to 1 indicates a higher confidence in the correctness of the response. Please submit your response and confidence rating using the following format:
+Context: {context}
+Your Response: {response}
+Confidence:"""
+
+# CONFIDENCE_INSTRUCTION = """Below you'll find contexts submitted by the user along with the responses your own generated. You should provide a confidence level for your responses, rated on a scale from 0 to 1. A higher score reflects a greater level of confidence in the accuracy of the generated responses. Please include your confidence estimate with each response you provide.
+# Question:{question}
+# Context:{context}
+# Response:{response}
+# Confidence:"""
+
+
+# REFLECTION_HEADER = 'You have attempted to answer following question before and failed. The following reflection(s) give a plan to avoid failing to answer the question in the same way you did previously. Use them to improve your strategy of correctly answering the given question.\n'
+REFLECTION_HEADER = 'You have attempted to answer following question before and failed. The following reflection(s) give a plan to avoid failing to answer the question in the same way you did previously. Use them to improve your strategy of correctly answering the given question.\n'
+# 以下反思提供了一个计划，以避免无法像以前那样回答问题。
+# 使用它们来改进你正确回答给定问题的策略。
+# REFLECTION_AFTER_LAST_TRIAL_HEADER = 'The following reflection(s) give a plan to avoid failing to answer the question in the same way you did previously. Use them to improve your strategy of correctly answering the given question.\n'
+REFLECTION_AFTER_LAST_TRIAL_HEADER = 'The following reflection(s) give a plan to avoid failing to answer the question in the same way you did previously. Use them to improve your strategy of correctly answering the given question.\n'
+# 你以前曾尝试回答以下问题，但失败了。以下是你试图回答问题的最后一次尝试。n
+LAST_TRIAL_HEADER = 'You have attempted to answer the following question before and failed. Below is the last trial you attempted to answer the question.\n'
+
+
+
+# 你以前曾试图回答以下问题，但失败了。以下反思提供了一个计划，
+# 以避免无法像以前那样回答问题。使用它们来改进你正确回答给定问题的策略。
+
+# 作为老师，我将为你提供学生提出的问题、他们之前的推理步骤，以及他们最后一次失败的回复。请仔细阅读并分析学生的推理过程和失败的回复。识别出学生在推理过程中出现的错误，并提供建设性的反馈，帮助学生理解错误的根源，从而改进其推理能力。
+TUTOR_ADVICE_HEADER = """I hope you can provide advice to help students as a tutor. I will give you a question, the student's previous reasoning content for the question, and their most recent fail responses."""
+TUTOR_ADVICE_MIDDLE = """Please provide `Advice` in the same format as before. what's more, please carefully analyze the reason of failed responses and offer constructive advice to help them understand the root causes of these errors and improve their response skills."""
+ADVICE_TEMPLATE = """{header}\n\n(START OF EXAMPLES)\n{examples}\n(END OF EXAMPLES)\n\n{middle}Question: {question}\nPrevious reasoning content:{context}\nFail Response:{response}\nAdvice:"""
+
+
+
+# 你是一个能够自我反思和持续改进的高级推理代理。
+# 每道题都会为你提供一个问题和之前试验。仔细阅读问题和之前试验，以及提供的建议，并通过思考来改善试验。
+# 思考可以对当前情况进行推理，返回答案并完成任务。
+REFLECTION_HEADER = """You’re an advanced reasoning agent capable of self-reflection and continuous improvement. Each problem will provide you with a question, previous excellent responses, and the last failed response."""
+REFLECTION_MIDDLE = """Please provide `Reflection` in the same format as before, and follow the provided advice to modify the last failed response through reflection."""
+REFLECTION_TEMPLATE = """{header}\n\n(START OF EXAMPLES)\n{examples}\n(END OF EXAMPLES)\n\n{middle}\nQuestion: {question}\nPrevious reasoning content:{context}\nLast Response:{response}\nAdvice: {tutor_ins}\nReflection:"""
