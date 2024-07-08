@@ -6,7 +6,7 @@ import torch
 from math import exp
 from scipy.special import softmax
 from retriever import BM25, SGPT, BGEReranker
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, AutoModel
 from examples import TUTOR_ADVICE_EXAMPLES, REFLECT_EXAMPLES
 from prompts import *
 
@@ -20,10 +20,15 @@ class BasicGenerator:
     def __init__(self, model_name_or_path):
         logger.info(f"Loading model from {model_name_or_path}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        self.model_config = AutoConfig.from_pretrained(model_name_or_path,
-                    trust_remote_code = "falcon" in model_name_or_path)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name_or_path, device_map="auto",
-                    trust_remote_code = "falcon" in model_name_or_path)
+        self.model_config = AutoConfig.from_pretrained(
+            model_name_or_path,
+            trust_remote_code = "falcon" in model_name_or_path,
+        )
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name_or_path,
+            device_map="cuda:0",
+            trust_remote_code=True,
+        ).eval()
         if self.model_config.model_type == "llama":
             self.space_token = "▁"
         else:
@@ -32,7 +37,21 @@ class BasicGenerator:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-    def generate(self, input_text, max_length, return_logprobs=False):
+    def _apply_chat_template_(self, prompt, add_generation_prompt=True):
+        message = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ]
+        text = self.tokenizer.apply_chat_template(
+            message,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+        )
+        return text
+
+    def generate(self, input_text, max_length, return_logprobs=False, chat_template='no'):
+        if chat_template != 'no':
+            input_text = self._apply_chat_template_(input_text)
         input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
         input_ids = input_ids.to(self.model.device)
         input_length = input_ids.shape[1]
@@ -854,8 +873,8 @@ class SeqConfidenceRAG(BasicRAG):
             return_logprobs=False
         )
         advice = advice.strip()
-        # import IPython
-        # IPython.embed()
+        import IPython
+        IPython.embed()
 
         reft_prompt = {
             "header": REFLECTION_HEADER,
@@ -904,11 +923,13 @@ class SeqConfidenceRAG(BasicRAG):
             # else:
             #     confs = 0.7
             if confs < self.reflection_threshold and confs >= self.hallucination_threshold:
+            # 根据置信度进行幻觉判断，如果需要反思，则调用self._reflection生成反思后的文本，之后再对生成的新文本进行置信度的判断，如果置信度比之前的文本高则进行置信度的替换（为什么不更改文本？reft_text）
+            # 若置信度过低，则将该句子mask掉
                 print(f'cur confs:{confs}, performed reflect')
                 reft_text = self._reflection_(question, context, sent, advice_examples=adv_examples, reflect_examples=ref_examples)
                 reft_cons = self._get_seq_confs_(question, context, reft_text)
                 if reft_cons >= confs:
-                    modify_text = sent
+                    modify_text = reft_text
                     confs = reft_cons
             elif confs < self.hallucination_threshold:
                 print(f'cur confs:{confs}, performed hullucination')
@@ -939,14 +960,14 @@ class SeqConfidenceRAG(BasicRAG):
 
             new_text, _, _ = self.generator.generate(prompt, self.generate_max_length)
 
-            # import IPython
-            # IPython.embed()
+            import IPython
+            IPython.embed()
             if self.use_counter == True:
                 self.counter.add_generate(new_text, self.generator.tokenizer)
 
             all_texts, seq_confidences, modified_texts, hallucination = self.modifier(question, ptext, new_text, adv_examples=TUTOR_ADVICE_EXAMPLES, ref_examples=REFLECT_EXAMPLES)
-            # import IPython
-            # IPython.embed()
+            import IPython
+            IPython.embed()
             if hallucination:
                 forward_all = [question, ptext.strip(), modified_texts]
                 forward_all = " ".join(s for s in forward_all if len(s) > 0)

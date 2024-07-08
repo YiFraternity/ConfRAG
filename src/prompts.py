@@ -1,7 +1,20 @@
-CONFIDENCE_TEMPLATE = """I will provide you with a specific context and your response. Please rate your response to indicate your confidence level in its accuracy. The rating scale ranges from 0 to 1, where a score closer to 1 indicates a higher confidence in the correctness of the response. Please submit your response and confidence rating using the following format:
-Context: {context}
-Your Response: {response}
-Confidence:"""
+CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
+#I believe you have true knowledge, and I will provide you with a specific context and your response. Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
+#Context: {context}
+#Your Response: {response}
+#Confidence:"""
+
+#"""Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
+#I believe you have true knowledge, and I will provide you with a specific context and your response. Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
+#Context: {context}
+#Your Response: {response}
+#Confidence:"""
+
+#"""You're a Q&A reasoning master, and you can judge the confidence level of an answer based on context. I'm going to give you a pair of clues next, including "Contexter" and your Respence. And all you have to do is give each sentence based on Contekste's confidence. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
+#The template is as follows: Context: {context}
+#Your Response: {response}
+#Confidence:"""
+
 
 # CONFIDENCE_INSTRUCTION = """Below you'll find contexts submitted by the user along with the responses your own generated. You should provide a confidence level for your responses, rated on a scale from 0 to 1. A higher score reflects a greater level of confidence in the accuracy of the generated responses. Please include your confidence estimate with each response you provide.
 # Question:{question}
