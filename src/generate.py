@@ -9,6 +9,13 @@ from retriever import BM25, SGPT, BGEReranker
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, AutoModel
 from examples import TUTOR_ADVICE_EXAMPLES, REFLECT_EXAMPLES
 from prompts import *
+from utils import (
+    process_answer_text,
+    process_confidence_text,
+    split_sentences,
+    ANSWER_NEW_TOKEN_NUM,
+)
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,7 +33,7 @@ class BasicGenerator:
         )
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
-            device_map="cuda:0",
+            device_map="auto",
             trust_remote_code=True,
         ).eval()
         if self.model_config.model_type == "llama":
@@ -39,7 +46,7 @@ class BasicGenerator:
 
     def _apply_chat_template_(self, prompt, add_generation_prompt=True):
         message = [
-            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "system", "content": "You are a helpful assistant, please don't reply to any irrelevant words."},
             {"role": "user", "content": prompt}
         ]
         text = self.tokenizer.apply_chat_template(
@@ -49,8 +56,8 @@ class BasicGenerator:
         )
         return text
 
-    def generate(self, input_text, max_length, return_logprobs=False, chat_template='no'):
-        if chat_template != 'no':
+    def generate(self, input_text, max_length, return_logprobs=False):
+        if self.model_config.model_type == "llama":
             input_text = self._apply_chat_template_(input_text)
         input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
         input_ids = input_ids.to(self.model.device)
@@ -827,19 +834,32 @@ class SeqConfidenceRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
+    def _generate_text_(self, prompt, generate_max_length, return_logprobs=False, gen_type='answer'):
+        gen_text, _, _ = self.generator.generate(
+            prompt,
+            generate_max_length,
+            return_logprobs=return_logprobs,
+        )
+        if gen_type == 'answer':
+            process_text = process_answer_text
+        elif gen_type == 'confidence':
+            process_text = process_confidence_text
+        text = process_text(gen_text)
+        return text
+
     def _get_seq_confs_(self, question, context, response):
         contxt = ' '.join([question.strip(), context.strip()])
         conf_prompt = CONFIDENCE_TEMPLATE.format(
             context=contxt,
             response=response,
         )
-        new_text, _, _ = self.generator.generate(
+        confs_text = self._generate_text_(
             conf_prompt,
-            5,
-            return_logprobs=False
+            500,
+            return_logprobs=False,
+            gen_type='confidence',
         )
-
-        tmp = re.findall(r"\d+\.?\d*", new_text)
+        tmp = re.findall(r"\d+\.?\d*", confs_text)
         if len(tmp) > 0:
             confs = float(tmp[0])
             if confs > 1:
@@ -869,12 +889,10 @@ class SeqConfidenceRAG(BasicRAG):
         advice_prompt = ADVICE_TEMPLATE.format(**tutor_data)
         advice, _, _ = self.generator.generate(
             advice_prompt,
-            50,
+            500,
             return_logprobs=False
         )
         advice = advice.strip()
-        import IPython
-        IPython.embed()
 
         reft_prompt = {
             "header": REFLECTION_HEADER,
@@ -888,11 +906,9 @@ class SeqConfidenceRAG(BasicRAG):
         reflect_prompt = REFLECTION_TEMPLATE.format(**reft_prompt)
         reflect, _, _ = self.generator.generate(
             reflect_prompt,
-            50,
+            500,
             return_logprobs=False,
         )
-        # import IPython
-        # IPython.embed()
         return reflect.strip()
 
     def modifier(self, question, ptext, text, adv_examples='', ref_examples=''):
@@ -906,9 +922,7 @@ class SeqConfidenceRAG(BasicRAG):
         """
         hallucination = False
 
-        sentences = [sent.text.strip() for sent in nlp(text).sents]
-        sentences = [sent for sent in sentences if len(sent) > 0]
-
+        sentences = split_sentences(text)
         confs_socres = []
         context = ptext + ' '
         modified_texts = []
@@ -917,11 +931,6 @@ class SeqConfidenceRAG(BasicRAG):
             if i > 0:
                 context += sentences[i-1]
             confs = self._get_seq_confs_(question, context, sent)
-            # 自己调试
-            # if i != 1:
-            #     confs = 0.7
-            # else:
-            #     confs = 0.7
             if confs < self.reflection_threshold and confs >= self.hallucination_threshold:
             # 根据置信度进行幻觉判断，如果需要反思，则调用self._reflection生成反思后的文本，之后再对生成的新文本进行置信度的判断，如果置信度比之前的文本高则进行置信度的替换（为什么不更改文本？reft_text）
             # 若置信度过低，则将该句子mask掉
@@ -948,26 +957,25 @@ class SeqConfidenceRAG(BasicRAG):
         docs = []
         pre_seq_confidence = 0.
         while True:
-            prompt = "".join([d["case"]+"\n" for d in demo])
+            examples = "".join([d["case"]+"\n" for d in demo])
+            doc_str = ''
             if len(docs) > 0:
-                prompt += "Context:\n"
+                doc_str += "Douments:\n"
                 for i, doc in enumerate(docs):
-                    prompt += f"[{i+1}] {doc}\n"
+                    doc_str += f"[{i+1}] {doc}\n"
+                doc_str += "Please answer the question based on the documents and the previous response.\n"
 
-            prompt += "Answer in the same format as before.\n"
-            tmp_li = [case, ptext.strip()]
-            prompt += " ".join(s for s in tmp_li if len(s) > 0)
+            prompt = ANSWER_QUESTION_TEMPLETE.format(
+                demo=examples,
+                docs=doc_str,
+                question=question,
+            )
 
-            new_text, _, _ = self.generator.generate(prompt, self.generate_max_length)
-
-            import IPython
-            IPython.embed()
+            new_text = self._generate_text_(prompt, self.generate_max_length)
             if self.use_counter == True:
                 self.counter.add_generate(new_text, self.generator.tokenizer)
 
             all_texts, seq_confidences, modified_texts, hallucination = self.modifier(question, ptext, new_text, adv_examples=TUTOR_ADVICE_EXAMPLES, ref_examples=REFLECT_EXAMPLES)
-            import IPython
-            IPython.embed()
             if hallucination:
                 forward_all = [question, ptext.strip(), modified_texts]
                 forward_all = " ".join(s for s in forward_all if len(s) > 0)
@@ -978,8 +986,6 @@ class SeqConfidenceRAG(BasicRAG):
                     raise NotImplemented
 
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
-                # import IPython
-                # IPython.embed()
                 docs = docs.tolist()
                 if self.use_counter == True:
                     self.counter.hallucinated += 1

@@ -1,8 +1,17 @@
+ANSWER_QUESTION_TEMPLETE = """Examples:
+{demo}
+Following the examples above, answer the question by reasoning step-by-step. Please note I want you to always conclude your responses with the phrase `So, the answer is ...`. Please ensure that this phrase summarizes the key point or answer to the question.
+{docs}
+Question: {question}
+Answer:
+"""
+
 CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
-#I believe you have true knowledge, and I will provide you with a specific context and your response. Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
-#Context: {context}
-#Your Response: {response}
-#Confidence:"""
+I believe you have true knowledge, and I will provide you with a specific context and your response.
+Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
+Context: \n`{context}`
+Your Response: \n`{response}`
+Confidence:"""
 
 #"""Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
 #I believe you have true knowledge, and I will provide you with a specific context and your response. Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
