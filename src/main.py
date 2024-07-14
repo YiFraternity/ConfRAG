@@ -42,7 +42,10 @@ def main():
     #         args.output_dir = os.path.join(args.output_dir, str(i))
     #         os.makedirs(args.output_dir)
     #         break
-    args.output_dir = osp.join(args.output_dir, args.retriever)
+    if 'retriever' in args:
+        args.output_dir = osp.join(args.output_dir, args.retriever)
+    else:
+        args.output_dir = osp.join(args.output_dir)
     os.makedirs(args.output_dir, exist_ok=True)
     logger.info(f"output dir: {args.output_dir}")
     # save config

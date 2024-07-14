@@ -37,7 +37,7 @@ class BasicGenerator:
             trust_remote_code=True,
         ).eval()
         if self.model_config.model_type == "llama":
-            self.space_token = "▁"
+            self.space_token = "Ġ"  # Llama3为`Ġ`，Llama2为`▁`
         else:
             self.space_token = self.tokenizer.tokenize(' ')[0]
 
@@ -95,6 +95,9 @@ class BasicGenerator:
             return text, None, None
 
     def generate_attn(self, input_text, max_length, solver="max", use_entropy = False, use_logprob = False):
+        if self.model_config.model_type == "llama":
+            input_text = self._apply_chat_template_(input_text)
+
         input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
         input_ids = input_ids.to(self.model.device)
         input_length = input_ids.shape[1]
@@ -114,7 +117,8 @@ class BasicGenerator:
         # merge tokens
         range_ = []
         for i, t in enumerate(tokens):
-            if i == 0 or t.startswith(self.space_token) or generated_tokens[0][i] == 13 or tokens[i-1] == '</s>':
+            # if i == 0 or t.startswith(self.space_token) or generated_tokens[0][i] == 13 or tokens[i-1] == '</s>':
+            if i == 0 or t.startswith(self.space_token) or generated_tokens[0][i] == 128009 or tokens[i-1] == '<|eot_id|>': # llama3
                 range_.append([i, i])
             else:
                 range_[-1][-1] += 1
@@ -306,19 +310,39 @@ class FixLengthRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
+    def _generate_text_(self, prompt, generate_max_length, return_logprobs=False, pre_answer=''):
+        gen_text, _, _ = self.generator.generate(
+            prompt,
+            generate_max_length,
+            return_logprobs=return_logprobs,
+        )
+        text = process_answer_text(gen_text, pre_answer)
+        return text
+
     def inference(self, question, demo, case):
-        assert self.query_formulation == "direct"
         text = ""
         while True:
             old_len = len(text)
-            docs = self.retrieve(question, topk=self.retrieve_topk)
+            if self.query_formulation == "direct":
+                retrieve_question = question
+            elif self.query_formulation == "forward_all":
+                tmp_all = [question, text]
+                retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
+            docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
             # 对 topk 个 passage 生成 prompt
-            prompt = "".join([d["case"]+"\n" for d in demo])
-            prompt += "Context:\n"
-            for i, doc in enumerate(docs):
-                prompt += f"[{i+1}] {doc}\n"
-            prompt += "Answer in t he same format as before.\n"
-            prompt += case + " " + text
+            examples = "".join([d["case"]+"\n" for d in demo])
+            doc_str = ''
+            if len(docs) > 0:
+                doc_str += "Douments:\n"
+                for i, doc in enumerate(docs):
+                    doc_str += f"[{i+1}] {doc}\n"
+
+            prompt = ANSWER_QUESTION_TEMPLETE.format(
+                demo=examples,
+                docs=(doc_str + ANSWER_USE_DOCUS_TEMPLATE) if len(docs) else doc_str,
+                question=question,
+                gen_text=text,
+            )
             if self.method == "fix-length-retrieval":
                 new_text, _, _ = self.generator.generate(prompt, self.fix_length)
                 if self.use_counter == True:
@@ -326,15 +350,14 @@ class FixLengthRAG(BasicRAG):
                 text = text.strip() + " " + new_text.strip()
             else:
                 # fix sentence
-                new_text, _, _ = self.generator.generate(prompt, self.generate_max_length)
+                new_text = self._generate_text_(prompt, self.generate_max_length, pre_answer=text)
                 if self.use_counter == True:
                     self.counter.add_generate(new_text, self.generator.tokenizer)
                 new_text = new_text.strip()
-                sentences = list(nlp(new_text).sents)
-                sentences = [str(sent).strip() for sent in sentences]
+                sentences = split_sentences(new_text)
                 if len(sentences) == 0:
                     break
-                text = text.strip() + " " + str(sentences[0])
+                text = text.strip() + " " + (" ".join(sentences[:4]))
 
             # 判断 token 的个数要少于 generate_max_length
             tokens_count = len(self.generator.tokenizer.encode(text))
@@ -530,8 +553,7 @@ class AttnWeightRAG(BasicRAG):
         super().__init__(args)
 
     def modifier(self, text, tokens, attentions, weight):
-        sentences = [sent.text.strip() for sent in nlp(text).sents]
-        sentences = [sent for sent in sentences if len(sent) > 0]
+        sentences = split_sentences(text)
         tid = 0
         for sid, sent in enumerate(sentences):
             tl, tr = tid, tid
@@ -658,12 +680,12 @@ class AttnWeightRAG(BasicRAG):
     def keep_real_words(self, prev_text, curr_tokens, curr_hit):
         curr_text = " ".join(curr_tokens)
         all_text = prev_text + " " + curr_text
-        input_ids = self.generator.tokenizer.encode(all_text, return_tensors="pt")
+        input_ids = self.generator.tokenizer.encode(all_text, return_tensors="pt").to(self.generator.model.device)
         input_length = input_ids.shape[1]
         tokens_tmp = self.generator.tokenizer.convert_ids_to_tokens(input_ids[0])
 
         atten_tmp = self.generator.model(input_ids, output_attentions=True).attentions[-1][0]
-
+        atten_tmp = atten_tmp.to('cpu')
         # merge tokens
         range_ = []
         for i, t in enumerate(tokens_tmp):
@@ -733,11 +755,22 @@ class AttnWeightRAG(BasicRAG):
         # print(question)
         # print("#" * 20)
         text = ""
+        docs = []
         while True:
             old_len = len(text)
-            prompt = "".join([d["case"]+"\n" for d in demo])
-            tmp_li = [case, text]
-            prompt += " ".join(s for s in tmp_li if len(s) > 0)
+            examples = "".join([d["case"]+"\n" for d in demo])
+            doc_str = ''
+            if len(docs) > 0:
+                doc_str += "Douments:\n"
+                for i, doc in enumerate(docs):
+                    doc_str += f"[{i+1}] {doc}\n"
+                doc_str += "Please answer the question based on the documents and the previous response.\n"
+
+            prompt = ANSWER_QUESTION_TEMPLETE.format(
+                demo=examples,
+                docs=doc_str,
+                question=question,
+            )
             # print('####', prompt)
             # prompt += case + " " + text
             new_text, tokens, attns, logprobs, entropies = self.generator.generate_attn(
@@ -834,7 +867,7 @@ class SeqConfidenceRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
-    def _generate_text_(self, prompt, generate_max_length, return_logprobs=False, gen_type='answer'):
+    def _generate_text_(self, prompt, generate_max_length, return_logprobs=False, gen_type='answer', pre_answer=''):
         gen_text, _, _ = self.generator.generate(
             prompt,
             generate_max_length,
@@ -844,12 +877,13 @@ class SeqConfidenceRAG(BasicRAG):
             process_text = process_answer_text
         elif gen_type == 'confidence':
             process_text = process_confidence_text
-        text = process_text(gen_text)
+        text = process_text(gen_text, pre_answer)
         return text
 
-    def _get_seq_confs_(self, question, context, response):
+    def _get_seq_confs_(self, question, context, response, docs=''):
         contxt = ' '.join([question.strip(), context.strip()])
         conf_prompt = CONFIDENCE_TEMPLATE.format(
+            docs=(docs + CONFIDENCE_USE_DOCUS_TEMPLATE) if len(docs) else docs,
             context=contxt,
             response=response,
         )
@@ -870,16 +904,15 @@ class SeqConfidenceRAG(BasicRAG):
             confs = 0.0
         return confs
 
-    def _reflection_(self, question, context, response, advice_examples='', reflect_examples=''):
+    def _reflection_(self, question, context, response):
         """
         # 反思需要两次生成
         # 1. tutor-advice: 用于指导从哪个层面思考
         # 2. Refine: 用于提升回复的质量
         """
-
         tutor_data = {
             "header": TUTOR_ADVICE_HEADER,
-            "examples": advice_examples,
+            "examples": TUTOR_ADVICE_EXAMPLES,
             "middle": TUTOR_ADVICE_MIDDLE,
             "question": question,
             "context": context,
@@ -893,10 +926,9 @@ class SeqConfidenceRAG(BasicRAG):
             return_logprobs=False
         )
         advice = advice.strip()
-
         reft_prompt = {
             "header": REFLECTION_HEADER,
-            "examples": reflect_examples,
+            "examples": REFLECT_EXAMPLES,
             "middle": REFLECTION_MIDDLE,
             "question": question,
             "context": context,
@@ -911,11 +943,12 @@ class SeqConfidenceRAG(BasicRAG):
         )
         return reflect.strip()
 
-    def modifier(self, question, ptext, text, adv_examples='', ref_examples=''):
+    def modifier(self, question, ptext, text, docs):
         """
         按模型对新生成的内容判断自信度进行修改。删除置信度不高的文本
 
-        return:
+        Return:
+            sentences: list of str, the sentences in the text
             confs_socres: list of float, the confidence score for each sentence
             new_text: str, the new text with the highest confidence score
             hallucination: bool, whether the new text is hallucinated
@@ -930,13 +963,13 @@ class SeqConfidenceRAG(BasicRAG):
             modify_text = sent
             if i > 0:
                 context += sentences[i-1]
-            confs = self._get_seq_confs_(question, context, sent)
+            confs = self._get_seq_confs_(question, context, sent, docs)
             if confs < self.reflection_threshold and confs >= self.hallucination_threshold:
-            # 根据置信度进行幻觉判断，如果需要反思，则调用self._reflection生成反思后的文本，之后再对生成的新文本进行置信度的判断，如果置信度比之前的文本高则进行置信度的替换（为什么不更改文本？reft_text）
+            # 根据置信度进行幻觉判断，如果需要反思，则调用self._reflection生成反思后的文本，之后再对生成的新文本进行置信度的判断，如果置信度比之前的文本高则进行置信度的替换
             # 若置信度过低，则将该句子mask掉
                 print(f'cur confs:{confs}, performed reflect')
-                reft_text = self._reflection_(question, context, sent, advice_examples=adv_examples, reflect_examples=ref_examples)
-                reft_cons = self._get_seq_confs_(question, context, reft_text)
+                reft_text = self._reflection_(question, context, sent)
+                reft_cons = self._get_seq_confs_(question, context, reft_text, docs)
                 if reft_cons >= confs:
                     modify_text = reft_text
                     confs = reft_cons
@@ -952,10 +985,10 @@ class SeqConfidenceRAG(BasicRAG):
         return sentences, confs_socres, modified_text, hallucination
 
     def inference(self, question, demo, case):
-        text = ""    # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
-        ptext = ""   # 用于存储之前生成所有的可用句子
+        fin_text = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
         docs = []
-        pre_seq_confidence = 0.
+        use_docs = ""
+        pre_seq_conf = 0.
         while True:
             examples = "".join([d["case"]+"\n" for d in demo])
             doc_str = ''
@@ -963,21 +996,27 @@ class SeqConfidenceRAG(BasicRAG):
                 doc_str += "Douments:\n"
                 for i, doc in enumerate(docs):
                     doc_str += f"[{i+1}] {doc}\n"
-                doc_str += "Please answer the question based on the documents and the previous response.\n"
 
             prompt = ANSWER_QUESTION_TEMPLETE.format(
                 demo=examples,
-                docs=doc_str,
+                docs=(doc_str + ANSWER_USE_DOCUS_TEMPLATE) if len(docs) else doc_str,
                 question=question,
+                gen_text=fin_text,
             )
-
-            new_text = self._generate_text_(prompt, self.generate_max_length)
+            # 当前轮次的新文本
+            cur_turn_new_text = self._generate_text_(prompt, self.generate_max_length, pre_answer=fin_text)
             if self.use_counter == True:
-                self.counter.add_generate(new_text, self.generator.tokenizer)
+                self.counter.add_generate(cur_turn_new_text, self.generator.tokenizer)
 
-            all_texts, seq_confidences, modified_texts, hallucination = self.modifier(question, ptext, new_text, adv_examples=TUTOR_ADVICE_EXAMPLES, ref_examples=REFLECT_EXAMPLES)
+            docs = []
+            cur_turn_all_seqs, cur_turn_seq_confs, modified_texts, hallucination = self.modifier(
+                question,
+                fin_text,
+                cur_turn_new_text,
+                docs=docs,
+            )
             if hallucination:
-                forward_all = [question, ptext.strip(), modified_texts]
+                forward_all = [question, fin_text.strip(), modified_texts]
                 forward_all = " ".join(s for s in forward_all if len(s) > 0)
                 forward_all = forward_all.replace("[xxx].", " ")
                 if self.query_formulation == "forward_all":
@@ -990,21 +1029,18 @@ class SeqConfidenceRAG(BasicRAG):
                 if self.use_counter == True:
                     self.counter.hallucinated += 1
 
-            for i, sent in enumerate(all_texts):
-                if seq_confidences[i] >= self.reflection_threshold:
-                    ptext += sent + " "
-                    text += sent + " "
+            # 只保留高置信度的句子
+            for seq_conf, sent in zip(cur_turn_seq_confs, cur_turn_all_seqs):
+                if seq_conf >= self.reflection_threshold:
+                    fin_text += sent + " "
                 else:
-                    pre_seq_confidence = seq_confidences[i]
+                    pre_seq_conf = seq_conf
                     break
 
-            try:
-                if "the answer is" in text or seq_confidences[0] <= pre_seq_confidence:
-                    for i, sent in enumerate(all_texts):
-                        if sent not in text:
-                            text += sent + " "
-                    # IPython.embed()
-                    break
-            except:
+            if "the answer is" in fin_text or (cur_turn_seq_confs and cur_turn_seq_confs[0] <= pre_seq_conf):
+                for i, sent in enumerate(cur_turn_all_seqs):
+                    if sent not in fin_text:
+                        fin_text += sent + " "
                 break
-        return text
+
+        return fin_text

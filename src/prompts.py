@@ -1,18 +1,21 @@
 ANSWER_QUESTION_TEMPLETE = """Examples:
 {demo}
-Following the examples above, answer the question by reasoning step-by-step. Please note I want you to always conclude your responses with the phrase `So, the answer is ...`. Please ensure that this phrase summarizes the key point or answer to the question.
 {docs}
+Following the examples above, answer the question by reasoning step-by-step. Please note I want you to always conclude your responses with the phrase `So, the answer is ...`. Please ensure that this phrase summarizes the key point or answer to the question.
 Question: {question}
-Answer:
-"""
+Answer: {gen_text}"""
+
+ANSWER_USE_DOCUS_TEMPLATE = "Please answer the question based on the above documents and the previous response.\n"
 
 CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
 I believe you have true knowledge, and I will provide you with a specific context and your response.
-Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
-Context: \n`{context}`
-Your Response: \n`{response}`
+{docs}Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
+Context:
+{context}
+Your Response:
+{response}
 Confidence:"""
-
+CONFIDENCE_USE_DOCUS_TEMPLATE = "Please provide your confidence in your response based on the above document.\n"
 #"""Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
 #I believe you have true knowledge, and I will provide you with a specific context and your response. Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
 #Context: {context}
@@ -47,9 +50,18 @@ LAST_TRIAL_HEADER = 'You have attempted to answer the following question before 
 # 以避免无法像以前那样回答问题。使用它们来改进你正确回答给定问题的策略。
 
 # 作为老师，我将为你提供学生提出的问题、他们之前的推理步骤，以及他们最后一次失败的回复。请仔细阅读并分析学生的推理过程和失败的回复。识别出学生在推理过程中出现的错误，并提供建设性的反馈，帮助学生理解错误的根源，从而改进其推理能力。
-TUTOR_ADVICE_HEADER = """I hope you can provide advice to help students as a tutor. I will give you a question, the student's previous reasoning content for the question, and their most recent fail responses."""
-TUTOR_ADVICE_MIDDLE = """Please provide `Advice` in the same format as before. what's more, please carefully analyze the reason of failed responses and offer constructive advice to help them understand the root causes of these errors and improve their response skills."""
-ADVICE_TEMPLATE = """{header}\n\n(START OF EXAMPLES)\n{examples}\n(END OF EXAMPLES)\n\n{middle}Question: {question}\nPrevious reasoning content:{context}\nFail Response:{response}\nAdvice:"""
+TUTOR_ADVICE_HEADER = "You are a knowledgeable tutor. I hope you can provide advice to help students as a tutor. I will give you a question, the student's previous reasoning content for the question, and their most recent fail responses."
+TUTOR_ADVICE_MIDDLE = "Please provide `Advice` in the same format as before. what's more, please carefully analyze the reason of failed responses and offer constructive advice to help them understand the root causes of these errors and improve their response skills."
+ADVICE_TEMPLATE = """{header}
+
+(START OF EXAMPLES)
+{examples}
+(END OF EXAMPLES)
+
+{middle}Question: {question}
+Previous reasoning content:{context}
+Fail Response: {response}
+Advice:"""
 
 
 
@@ -58,4 +70,14 @@ ADVICE_TEMPLATE = """{header}\n\n(START OF EXAMPLES)\n{examples}\n(END OF EXAMPL
 # 思考可以对当前情况进行推理，返回答案并完成任务。
 REFLECTION_HEADER = """You’re an advanced reasoning agent capable of self-reflection and continuous improvement. Each problem will provide you with a question, previous excellent responses, and the last failed response."""
 REFLECTION_MIDDLE = """Please provide `Reflection` in the same format as before, and follow the provided advice to modify the last failed response through reflection."""
-REFLECTION_TEMPLATE = """{header}\n\n(START OF EXAMPLES)\n{examples}\n(END OF EXAMPLES)\n\n{middle}\nQuestion: {question}\nPrevious reasoning content:{context}\nLast Response:{response}\nAdvice: {tutor_ins}\nReflection:"""
+REFLECTION_TEMPLATE = """{header}
+
+(START OF EXAMPLES){examples}
+(END OF EXAMPLES)
+
+{middle}
+Question: {question}
+Previous reasoning content:{context}
+Last Response:{response}
+Advice: {tutor_ins}
+Reflection:"""

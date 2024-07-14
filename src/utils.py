@@ -2,22 +2,6 @@ import re
 
 ANSWER_NEW_TOKEN_NUM = 2048
 
-def process_answer_text(text):
-    ptns = r'(?i).*?\banswer\s*[:：]\s*'
-    pattern = re.compile(ptns, re.DOTALL)
-    result = re.sub(pattern, '', text)
-    return result.strip()
-
-
-def process_confidence_text(text):
-    ptns_choice = [
-        r'(?i).*?\bconfidence\s*[:：]\s*',
-        r'(?i).*?\bmy confidence',
-    ]
-    for ptns in ptns_choice:
-        pattern = re.compile(ptns, re.DOTALL)
-        text = re.sub(pattern, '', text)
-    return text.strip()
 
 def split_sentences(text):
     # 定义正则表达式模式，匹配句子结束的标点符号（包括全角和半角的句号和换行符），但不包括数字后的点和冒号
@@ -30,6 +14,26 @@ def split_sentences(text):
     sentences = [sentence.strip() + ('\n' if sentence.endswith('\n') else '') for sentence in sentences if sentence.strip()]
     return sentences
 
+
+
+def process_answer_text(text, pre_answer):
+    ptns = r'(?i).*?\banswer\s*[:：]\s*'
+    pattern = re.compile(ptns, re.DOTALL)
+    result = re.sub(pattern, '', text)
+    all_texts = split_sentences(result)
+    not_in_prompt_texts = [text for text in all_texts if text not in pre_answer]
+    return ' '.join(not_in_prompt_texts).strip()
+
+
+def process_confidence_text(text, prompt):
+    ptns_choice = [
+        r'(?i).*?\bconfidence\s*[:：]\s*',
+        r'(?i).*?\bmy confidence',
+    ]
+    for ptns in ptns_choice:
+        pattern = re.compile(ptns, re.DOTALL)
+        text = re.sub(pattern, '', text)
+    return text.strip()
 
 if __name__ == '__main__':
     text = "1 This is a test. 2. This is another test. 3.This is a third test.\n 4. This is a fourth test."

@@ -1,0 +1,16 @@
+{
+    "model_name_or_path": "/group_homes/our_llm_domain/home/share/open_models/llama3/Meta-Llama-3-8B-Instruct",
+    "method": "fix-sentence-retrieval",
+    "dataset": "strategyqa",
+    "data_path": "/home/liuyh0916/data/open_source_data/QA/strategyqa",
+    "fewshot": 6,
+    "sample": 1000,
+    "shuffle": false,
+    "generate_max_length": 500,
+    "query_formulation": "forward_all",
+    "output_dir": "results/FS-RAG/Meta-Llama-3-8B-Instruct",
+    "retriever": "BM25",
+    "es_index_name": "wiki",
+    "retrieve_topk": 3,
+    "use_counter": true
+}
