@@ -36,7 +36,7 @@ class BasicGenerator:
             device_map="auto",
             trust_remote_code=True,
         ).eval()
-        if self.model_config.model_type == "llama":
+        if self.model_config.model_type in ["llama", "qwen2"]:
             self.space_token = "Ġ"  # Llama3为`Ġ`，Llama2为`▁`
         else:
             self.space_token = self.tokenizer.tokenize(' ')[0]
@@ -57,7 +57,7 @@ class BasicGenerator:
         return text
 
     def generate(self, input_text, max_length, return_logprobs=False):
-        if self.model_config.model_type == "llama":
+        if self.model_config.model_type in ["llama", "qwen2"]:
             input_text = self._apply_chat_template_(input_text)
         input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
         input_ids = input_ids.to(self.model.device)
@@ -889,7 +889,7 @@ class SeqConfidenceRAG(BasicRAG):
         )
         confs_text = self._generate_text_(
             conf_prompt,
-            500,
+            5 if self.generator.model_config.model_type in ['qwen2'] else 500,
             return_logprobs=False,
             gen_type='confidence',
         )
