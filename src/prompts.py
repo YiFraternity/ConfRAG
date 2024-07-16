@@ -9,7 +9,7 @@ ANSWER_USE_DOCUS_TEMPLATE = "Please answer the question based on the above docum
 
 CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
 I believe you have true knowledge, and I will provide you with a specific context and your response.
-{docs}Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
+{docs}Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the `Your Response`.
 Context:
 {context}
 Your Response:

@@ -29,6 +29,7 @@ def process_confidence_text(text, prompt):
     ptns_choice = [
         r'(?i).*?\bconfidence\s*[:：]\s*',
         r'(?i).*?\bmy confidence',
+        r'(?i).*?\ba confidence level',
     ]
     for ptns in ptns_choice:
         pattern = re.compile(ptns, re.DOTALL)
