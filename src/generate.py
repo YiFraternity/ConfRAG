@@ -985,9 +985,8 @@ class SeqConfidenceRAG(BasicRAG):
         return sentences, confs_socres, modified_text, hallucination
 
     def inference(self, question, demo, case):
-        fin_text = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
+        ptext = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
         docs = []
-        use_docs = ""
         pre_seq_conf = 0.
         while True:
             examples = "".join([d["case"]+"\n" for d in demo])
@@ -1001,22 +1000,21 @@ class SeqConfidenceRAG(BasicRAG):
                 demo=examples,
                 docs=(doc_str + ANSWER_USE_DOCUS_TEMPLATE) if len(docs) else doc_str,
                 question=question,
-                gen_text=fin_text,
+                gen_text=ptext,
             )
             # 当前轮次的新文本
-            cur_turn_new_text = self._generate_text_(prompt, self.generate_max_length, pre_answer=fin_text)
+            new_text = self._generate_text_(prompt, self.generate_max_length, pre_answer=ptext)
             if self.use_counter == True:
-                self.counter.add_generate(cur_turn_new_text, self.generator.tokenizer)
+                self.counter.add_generate(new_text, self.generator.tokenizer)
 
-            docs = []
-            cur_turn_all_seqs, cur_turn_seq_confs, modified_texts, hallucination = self.modifier(
+            all_seqs, all_seqs_confs, modified_texts, hallucination = self.modifier(
                 question,
-                fin_text,
-                cur_turn_new_text,
+                ptext,
+                new_text,
                 docs=docs,
             )
             if hallucination:
-                forward_all = [question, fin_text.strip(), modified_texts]
+                forward_all = [question, ptext.strip(), modified_texts]
                 forward_all = " ".join(s for s in forward_all if len(s) > 0)
                 forward_all = forward_all.replace("[xxx].", " ")
                 if self.query_formulation == "forward_all":
@@ -1030,17 +1028,18 @@ class SeqConfidenceRAG(BasicRAG):
                     self.counter.hallucinated += 1
 
             # 只保留高置信度的句子
-            for seq_conf, sent in zip(cur_turn_seq_confs, cur_turn_all_seqs):
+            for seq_conf, sent in zip(all_seqs_confs, all_seqs):
                 if seq_conf >= self.reflection_threshold:
-                    fin_text += sent + " "
+                    ptext += sent + " "
                 else:
                     pre_seq_conf = seq_conf
                     break
 
-            if "the answer is" in fin_text or (cur_turn_seq_confs and cur_turn_seq_confs[0] <= pre_seq_conf):
-                for i, sent in enumerate(cur_turn_all_seqs):
-                    if sent not in fin_text:
-                        fin_text += sent + " "
+            if "the answer is" in ptext or (all_seqs_confs and all_seqs_confs[0] <= pre_seq_conf):
+                for i, sent in enumerate(all_seqs):
+                    if sent not in ptext:
+                        ptext += sent + " "
                 break
 
-        return fin_text
+            docs = []
+        return ptext
