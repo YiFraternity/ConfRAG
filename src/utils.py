@@ -28,7 +28,7 @@ def process_answer_text(text, pre_answer):
 def process_confidence_text(text, prompt):
     ptns_choice = [
         r'(?i).*?\bconfidence\s*[:：]\s*',
-        r'(?i).*?\bmy confidence',
+        r'(?i).*?\bmy confidence is',
         r'(?i).*?\ba confidence level',
     ]
     for ptns in ptns_choice:

@@ -56,7 +56,16 @@ class BasicGenerator:
         )
         return text
 
-    def generate(self, input_text, max_length, return_logprobs=False):
+    def generate(
+            self,
+            input_text,
+            max_length,
+            temperature=0.6,
+            top_p=0.9,
+            top_k=50,
+            repetition_penalty=1.0,
+            return_logprobs=False,
+        ):
         if self.model_config.model_type in ["llama", "qwen2"]:
             input_text = self._apply_chat_template_(input_text)
         input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
@@ -88,10 +97,14 @@ class BasicGenerator:
             outputs = self.model.generate(
                 input_ids = input_ids,
                 max_new_tokens = max_length,
+                temperature = temperature,
+                top_p = top_p,
+                top_k = top_k,
+                repetition_penalty=repetition_penalty,
                 attention_mask = attention_mask,
             )
             generated_tokens = outputs[:, input_length:]
-            text = self.tokenizer.decode(generated_tokens[0])
+            text = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
             return text, None, None
 
     def generate_attn(self, input_text, max_length, solver="max", use_entropy = False, use_logprob = False):
@@ -278,9 +291,21 @@ class BasicRAG:
     def inference(self, question, demo, case):
         # non-retrieval
         assert self.query_formulation == "direct"
-        prompt = "".join([d["case"]+"\n" for d in demo])
-        prompt += case
-        text, _, _ = self.generator.generate(prompt, self.generate_max_length)
+        examples = "".join([d["case"]+"\n" for d in demo])
+        prompt = ANSWER_QUESTION_TEMPLETE.format(
+            demo=examples,
+            docs="",
+            question=question,
+            gen_text="",
+        )
+        text, _, _ = self.generator.generate(
+            prompt,
+            max_length=self.generate_max_length,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            repetition_penalty=self.repetition_penalty,
+        )
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
         return text
@@ -294,12 +319,19 @@ class SingleRAG(BasicRAG):
         assert self.query_formulation == "direct"
         docs = self.retrieve(question, topk=self.retrieve_topk)
         # 对 topk 个 passage 生成 prompt
-        prompt = "".join([d["case"]+"\n" for d in demo])
-        prompt += "Context:\n"
-        for i, doc in enumerate(docs):
-            prompt += f"[{i+1}] {doc}\n"
-        prompt += "Answer in the same format as before.\n"
-        prompt += case
+        examples = "".join([d["case"]+"\n" for d in demo])
+        doc_str = ''
+        if len(docs) > 0:
+            doc_str += "Douments:\n"
+            for i, doc in enumerate(docs):
+                doc_str += f"[{i+1}] {doc}\n"
+
+        prompt = ANSWER_QUESTION_TEMPLETE.format(
+            demo=examples,
+            docs=(doc_str + ANSWER_USE_DOCUS_TEMPLATE) if len(docs) else doc_str,
+            question=question,
+            gen_text="",
+        )
         text, _, _ = self.generator.generate(prompt, self.generate_max_length)
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
@@ -867,10 +899,24 @@ class SeqConfidenceRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
-    def _generate_text_(self, prompt, generate_max_length, return_logprobs=False, gen_type='answer', pre_answer=''):
+    def _generate_text_(
+            self,
+            prompt,
+            return_logprobs=False,
+            gen_type='answer',
+            pre_answer=''
+        ):
+        if gen_type == 'answer':
+            max_length = self.generate_max_length
+        elif gen_type == 'confidence':
+            max_length = self.generate_confidence_length
         gen_text, _, _ = self.generator.generate(
             prompt,
-            generate_max_length,
+            max_length=max_length,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            repetition_penalty=self.repetition_penalty,
             return_logprobs=return_logprobs,
         )
         if gen_type == 'answer':
@@ -878,18 +924,23 @@ class SeqConfidenceRAG(BasicRAG):
         elif gen_type == 'confidence':
             process_text = process_confidence_text
         text = process_text(gen_text, pre_answer)
+        # import IPython
+        # IPython.embed()
         return text
 
     def _get_seq_confs_(self, question, context, response, docs=''):
         contxt = ' '.join([question.strip(), context.strip()])
+        docs_str = docs
+        if len(docs) > 0:
+            docs_str += (' ' + CONFIDENCE_USE_DOCUS_TEMPLATE)
         conf_prompt = CONFIDENCE_TEMPLATE.format(
-            docs=(docs + CONFIDENCE_USE_DOCUS_TEMPLATE) if len(docs) else docs,
+            docs=docs_str,
             context=contxt,
             response=response,
         )
         confs_text = self._generate_text_(
             conf_prompt,
-            5 if self.generator.model_config.model_type in ['qwen2'] else 500,
+            # 5 if self.generator.model_config.model_type in ['qwen2'] else 500,
             return_logprobs=False,
             gen_type='confidence',
         )
@@ -1003,7 +1054,10 @@ class SeqConfidenceRAG(BasicRAG):
                 gen_text=ptext,
             )
             # 当前轮次的新文本
-            new_text = self._generate_text_(prompt, self.generate_max_length, pre_answer=ptext)
+            new_text = self._generate_text_(
+                prompt,
+                pre_answer=ptext,
+            )
             if self.use_counter == True:
                 self.counter.add_generate(new_text, self.generator.tokenizer)
 
