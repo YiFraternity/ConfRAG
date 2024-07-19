@@ -1,0 +1,18 @@
+{
+    "model_name_or_path": "/home/yhliu/models/open_models/qwen/Qwen1.5-14B-Chat",
+    "method": "non-retrieval",
+    "dataset": "hotpotqa",
+    "data_path": "/home/yhliu/data/hotpotqa",
+    "fewshot": 8,
+    "sample": 1000,
+    "shuffle": false,
+    "temperature": 0.6,
+    "top_p": 0.9,
+    "top_k": 1,
+    "repetition_penalty": 1.2,
+    "generate_max_length": 512,
+    "query_formulation": "direct",
+    "output_dir": "/home/yhliu/calibration/results/wo-RAG/Qwen1.5-14B-Chat/hotpotqa",
+    "es_index_name": "wiki",
+    "use_counter": true
+}
