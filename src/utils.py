@@ -1,20 +1,23 @@
 import re
+import spacy
+nlp = spacy.load("en_core_web_sm")
 
 ANSWER_NEW_TOKEN_NUM = 2048
 
 
 def split_sentences(text):
-    # 定义正则表达式模式，匹配句子结束的标点符号（包括全角和半角的句号和换行符），但不包括数字后的点和冒号
-    pattern = re.compile(r'(?<!\d)([。.\n])|(?<!\d)([:：])(?!\d)')
-    # 使用正则表达式替换匹配的部分，同时保留匹配的标点符号，并在每个匹配的标点符号后添加一个特殊标记
-    text_with_markers = re.sub(pattern, r'\1\2<split>', text)
-    # 根据特殊标记拆分句子
-    sentences = text_with_markers.split('<split>')
-    # 去除空白句子
-    sentences = [sentence.strip() + ('\n' if sentence.endswith('\n') else '') for sentence in sentences if sentence.strip()]
-    return sentences
-
-
+    sentences = [sent.text.strip() for sent in nlp(text).sents]
+    sentences = [sent for sent in sentences if len(sent) > 0]
+    results = []
+    i = 0
+    while i < len(sentences):
+        if re.search(r'\d+\.', sentences[i].strip()) and i < len(sentences) - 1:
+            results.append(sentences[i] + " " + sentences[i + 1])
+            i += 2
+        else:
+            results.append(sentences[i])
+            i += 1
+    return results
 
 def process_answer_text(text, pre_answer):
     ptns = r'(?i).*?\banswer\s*[:：]\s*'
@@ -34,7 +37,16 @@ def process_confidence_text(text, prompt):
     for ptns in ptns_choice:
         pattern = re.compile(ptns, re.DOTALL)
         text = re.sub(pattern, '', text)
-    return text.strip()
+    tmp = re.findall(r"\d+\.?\d*", text)
+    if len(tmp) > 0:
+        confs = float(tmp[0])
+        if confs > 1:
+            num_digits = len(str(int(confs)))
+            scale_factor = 10 ** num_digits
+            confs = min(1, confs / scale_factor)
+    else:
+        confs = 0.0
+    return confs
 
 if __name__ == '__main__':
     text = "1 This is a test. 2. This is another test. 3.This is a third test.\n 4. This is a fourth test."

@@ -1,21 +1,22 @@
-ANSWER_QUESTION_TEMPLETE = """Examples:
-{demo}
+ANSWER_QUESTION_TEMPLETE = """{docs}Please answer the question by reasoning step-by-step. And I expect the model to provide answers in a format consistent with the question and to only provide the answer without including the question. Additionally, please prefix each answer with "So, the answer is".
+Question:
+{question}
+Answer:
+{gen_text}"""
+
+ANSWER_USE_DOCUS_TEMPLATE = "Please answer the question based on the following documents.\n"
+
+CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.' I believe you have true knowledge, and I will provide you with `Context` and `Your response` which you generated base on the `Context`.
+Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the `Your Response`. If the reasoning process is given in `Your Response`, there may be a relatively high level of confidence. If the answer is given, please ensure that it is correct and give a high level of confidence.
 {docs}
-Following the examples above, answer the question by reasoning step-by-step. Please note I want you to always conclude your responses with the phrase `So, the answer is ...`. Please ensure that this phrase summarizes the key point or answer to the question.
-Question: {question}
-Answer: {gen_text}"""
-
-ANSWER_USE_DOCUS_TEMPLATE = "Please answer the question based on the above documents and the previous response.\n"
-
-CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
-I believe you have true knowledge, and I will provide you with a specific context and your response.
-{docs}Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the `Your Response`.
 Context:
 {context}
 Your Response:
 {response}
 Confidence:"""
-CONFIDENCE_USE_DOCUS_TEMPLATE = "Please provide your confidence in your response based on the above document.\n"
+
+CONFIDENCE_USE_DOCS_PREFIX = "Below are the documents related to the `Context`. When you provide your confidence in 'Your Response', please refer to the documents"
+CONFIDENCE_USE_DOCUS_TEMPLATE = "Please provide your confidence in your response based on the above documents.\n"
 #"""Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
 #I believe you have true knowledge, and I will provide you with a specific context and your response. Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
 #Context: {context}
