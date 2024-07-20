@@ -1,11 +1,11 @@
-ANSWER_QUESTION_TEMPLETE = """{demo}{docs}Please answer the question by reasoning step-by-step. And I expect the model to provide answers in a format consistent with the question and to only provide the answer without including the question. Additionally, please prefix each answer with "So, the answer is".
-Question:
-{question}
-Answer:
-{gen_text}"""
+ANSWER_QUESTION_TEMPLETE = """{examples}{docs}{use_docs}{use_demo}
+Question: {question}
+Answer: {gen_text}"""
+ANSWER_USE_DOCS_TEMPLATE = "Please answer the question based on the above documents."
+ANSWER_NOT_USE_DOCS_TEMPLATE = """Please answer the question by reasoning step-by-step."""
 
-ANSWER_USE_DOCUS_TEMPLATE = "Please answer the question based on the above documents."
-ANSWER_USE_DEMO_TEMPLATE = "Answer in the same format as the examples."
+ANSWER_USE_DEMO_TEMPLATE = """And I hope you can answer the question in the same format as the examples, (i.e, ending with 'So, the answer is')."""
+ANSWER_NOT_USE_DEMO_TEMPLATE = """And I expect you to provide answers in a format consistent with the question and to only provide the answer without including the question. Additionally, please prefix each answer with "So, the answer is"."""
 
 CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.' I believe you have true knowledge, and I will provide you with `Context` and `Your response` which you generated base on the `Context`.
 Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the `Your Response`. If the reasoning process is given in `Your Response`, there may be a relatively high level of confidence. If the answer is given, please ensure that it is correct and give a high level of confidence.
@@ -61,7 +61,7 @@ ADVICE_TEMPLATE = """{header}
 (END OF EXAMPLES)
 
 {middle}Question: {question}
-Previous reasoning content:{context}
+Previous reasoning content:{history_resp}
 Fail Response: {response}
 Advice:"""
 
@@ -79,7 +79,7 @@ REFLECTION_TEMPLATE = """{header}
 
 {middle}
 Question: {question}
-Previous reasoning content:{context}
+Previous reasoning content:{history_resp}
 Last Response:{response}
 Advice: {tutor_ins}
 Reflection:"""

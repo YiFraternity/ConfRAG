@@ -16,6 +16,44 @@ from utils import (
 )
 
 
+def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
+    doc_str = ''
+    if len(docs) > 0:
+        doc_str += "Douments:\n"
+        for i, doc in enumerate(docs):
+            doc_str += f"[{i+1}] {doc}\n"
+
+    if len(demo) > 0:
+        examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
+        examples += '\n'
+    else:
+        examples = ""
+    prompt = ANSWER_QUESTION_TEMPLETE.format(
+        examples=examples,
+        docs=doc_str,
+        question=question,
+        use_docs=(ANSWER_USE_DOCS_TEMPLATE if len(docs) > 0 else ANSWER_NOT_USE_DOCS_TEMPLATE) + ' ',
+        use_demo=ANSWER_USE_DEMO_TEMPLATE if len(demo) > 0 else ANSWER_NOT_USE_DEMO_TEMPLATE,
+        gen_text=text,
+    )
+    return prompt
+
+
+def _get_conf_prompt_(question, history_resp, response, docs):
+    context = question + " " + history_resp
+    doc_str = ''
+    if len(docs) > 0:
+        doc_str += "Douments:\n"
+        for i, doc in enumerate(docs):
+            doc_str += f"[{i+1}] {doc}\n"
+        doc_str = (CONFIDENCE_USE_DOCS_PREFIX + ' ' + doc_str)
+    conf_prompt = CONFIDENCE_TEMPLATE.format(
+        docs=doc_str,
+        context=context,
+        response=response,
+    )
+    return conf_prompt
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -45,7 +83,7 @@ class BasicGenerator:
 
     def _apply_chat_template_(self, prompt, add_generation_prompt=True):
         message = [
-            {"role": "system", "content": "You are a helpful assistant, please don't reply to any irrelevant words."},
+            {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt}
         ]
         text = self.tokenizer.apply_chat_template(
@@ -290,16 +328,7 @@ class BasicRAG:
     def inference(self, question, demo, case):
         # non-retrieval
         assert self.query_formulation == "direct"
-        if len(demo) > 0:
-            examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
-        else:
-            examples = ""
-        prompt = ANSWER_QUESTION_TEMPLETE.format(
-            demo=examples,
-            docs="",
-            question=question,
-            gen_text="",
-        )
+        prompt = _get_answer_prompt_([], demo=demo, question=question, gen_text="")
         text, _, _ = self.generator.generate(
             prompt,
             max_length=self.generate_max_length,
@@ -321,24 +350,7 @@ class SingleRAG(BasicRAG):
         assert self.query_formulation == "direct"
         docs = self.retrieve(question, topk=self.retrieve_topk)
         # 对 topk 个 passage 生成 prompt
-        doc_str = ''
-        if len(docs) > 0:
-            doc_str += "Douments:\n"
-            for i, doc in enumerate(docs):
-                doc_str += f"[{i+1}] {doc}\n"
-            doc_str += ANSWER_USE_DOCUS_TEMPLATE
-
-        if len(demo) > 0:
-            examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
-            doc_str += (' ' + ANSWER_USE_DEMO_TEMPLATE)  # 将回答格式放在文档后面
-        else:
-            examples = ""
-        prompt = ANSWER_QUESTION_TEMPLETE.format(
-            demo=examples,
-            docs=doc_str,
-            question=question,
-            gen_text="",
-        )
+        prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, gen_text="")
         text, _, _ = self.generator.generate(prompt, self.generate_max_length)
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
@@ -369,19 +381,8 @@ class FixLengthRAG(BasicRAG):
                 retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
             docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
             # 对 topk 个 passage 生成 prompt
-            examples = "".join([d["case"]+"\n" for d in demo])
-            doc_str = ''
-            if len(docs) > 0:
-                doc_str += "Douments:\n"
-                for i, doc in enumerate(docs):
-                    doc_str += f"[{i+1}] {doc}\n"
 
-            prompt = ANSWER_QUESTION_TEMPLETE.format(
-                demo=examples,
-                docs=(doc_str + ANSWER_USE_DOCUS_TEMPLATE) if len(docs) else doc_str,
-                question=question,
-                gen_text=text,
-            )
+            prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, gen_text=text)
             if self.method == "fix-length-retrieval":
                 new_text, _, _ = self.generator.generate(prompt, self.fix_length)
                 if self.use_counter == True:
@@ -935,15 +936,15 @@ class SeqConfidenceRAG(BasicRAG):
         text = process_text(gen_text, pre_answer)
         return text
 
-    def _get_seq_confs_(self, question, context, response, doc_str=''):
-        contxt = ' '.join([question.strip(), context.strip()])
-        if len(doc_str) > 0:
-            doc_str = (CONFIDENCE_USE_DOCS_PREFIX + ' ' + doc_str)
-        conf_prompt = CONFIDENCE_TEMPLATE.format(
-            docs=doc_str,
-            context=contxt,
+    def _get_seq_confs_(self, question, history_resp, response, docs):
+        conf_prompt = _get_conf_prompt_(
+            question=question,
+            history_resp=history_resp,
             response=response,
+            docs=docs
         )
+        import IPython
+        IPython.embed()
         confs = self._generate_text_(
             conf_prompt,
             # 5 if self.generator.model_config.model_type in ['qwen2'] else 500,
@@ -952,7 +953,7 @@ class SeqConfidenceRAG(BasicRAG):
         )
         return confs
 
-    def _reflection_(self, question, context, response):
+    def _reflection_(self, question, history_resp, response):
         """
         # 反思需要两次生成
         # 1. tutor-advice: 用于指导从哪个层面思考
@@ -963,7 +964,7 @@ class SeqConfidenceRAG(BasicRAG):
             "examples": TUTOR_ADVICE_EXAMPLES,
             "middle": TUTOR_ADVICE_MIDDLE,
             "question": question,
-            "context": context,
+            "history_resp": history_resp,
             "response": response,
         }
 
@@ -979,7 +980,7 @@ class SeqConfidenceRAG(BasicRAG):
             "examples": REFLECT_EXAMPLES,
             "middle": REFLECTION_MIDDLE,
             "question": question,
-            "context": context,
+            "history_resp": history_resp,
             "response": response,
             "tutor_ins": advice,
         }
@@ -991,7 +992,7 @@ class SeqConfidenceRAG(BasicRAG):
         )
         return reflect.strip()
 
-    def modifier(self, question, ptext, text, doc_str):
+    def modifier(self, question, ptext, text, docs):
         """
         按模型对新生成的内容判断自信度进行修改。删除置信度不高的文本
 
@@ -1006,19 +1007,19 @@ class SeqConfidenceRAG(BasicRAG):
         reflect_tag = True   # 仅仅在前面所有句子置信度都高的情况下才可以反思，若前面出现了置信度较低的情况，则反思无效
         sentences = split_sentences(text)
         confs_socres = []
-        context = ptext + ' '
+        history_resp = ptext + ' '
         modified_texts = []
         for i, sent in enumerate(sentences):
             modify_text = sent
             if i > 0:
-                context += sentences[i-1]
-            confs = self._get_seq_confs_(question, context, sent, doc_str)
+                history_resp += sentences[i-1]
+            confs = self._get_seq_confs_(question, history_resp, sent, docs)
             if confs < self.reflection_threshold and confs >= self.hallucination_threshold and reflect_tag:
                 # 根据置信度进行幻觉判断，如果需要反思，则调用self._reflection生成反思后的文本，之后再对生成的新文本进行置信度的判断，如果置信度比之前的文本高则进行置信度的替换
                 # 若置信度过低，则将该句子mask掉
                 print(f'cur confs:{confs}, performed reflect')
-                reft_text = self._reflection_(question, context, sent)
-                reft_cons = self._get_seq_confs_(question, context, reft_text, doc_str)
+                reft_text = self._reflection_(question, history_resp, sent)
+                reft_cons = self._get_seq_confs_(question, history_resp, reft_text, docs)
                 if reft_cons >= confs:
                     modify_text = reft_text
                     confs = reft_cons
@@ -1042,19 +1043,7 @@ class SeqConfidenceRAG(BasicRAG):
         temp_conf = 0
         epoch = 0
         while True:
-            examples = "".join([d["case"]+"\n" for d in demo])
-            doc_str = ''
-            if len(docs) > 0:
-                doc_str += "Douments:\n"
-                for i, doc in enumerate(docs):
-                    doc_str += f"[{i+1}] {doc}\n"
-
-            prompt = ANSWER_QUESTION_TEMPLETE.format(
-                # demo=examples,
-                docs=(doc_str + ANSWER_USE_DOCUS_TEMPLATE) if len(docs) else doc_str,
-                question=question,
-                gen_text=ptext,
-            )
+            prompt = _get_answer_prompt_(docs, demo, question, ptext)
             # 当前轮次的新文本
             new_text = self._generate_text_(
                 prompt,
@@ -1067,7 +1056,7 @@ class SeqConfidenceRAG(BasicRAG):
                 question,
                 ptext,
                 new_text,
-                doc_str=doc_str,
+                docs=docs,
             )
             docs = []
             if hallucination:
