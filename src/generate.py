@@ -328,7 +328,7 @@ class BasicRAG:
     def inference(self, question, demo, case):
         # non-retrieval
         assert self.query_formulation == "direct"
-        prompt = _get_answer_prompt_([], demo=demo, question=question, gen_text="")
+        prompt = _get_answer_prompt_([], demo=demo, question=question, text="")
         text, _, _ = self.generator.generate(
             prompt,
             max_length=self.generate_max_length,
@@ -350,7 +350,7 @@ class SingleRAG(BasicRAG):
         assert self.query_formulation == "direct"
         docs = self.retrieve(question, topk=self.retrieve_topk)
         # 对 topk 个 passage 生成 prompt
-        prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, gen_text="")
+        prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text="")
         text, _, _ = self.generator.generate(prompt, self.generate_max_length)
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
@@ -382,7 +382,7 @@ class FixLengthRAG(BasicRAG):
             docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
             # 对 topk 个 passage 生成 prompt
 
-            prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, gen_text=text)
+            prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text=text)
             if self.method == "fix-length-retrieval":
                 new_text, _, _ = self.generator.generate(prompt, self.fix_length)
                 if self.use_counter == True:
@@ -943,8 +943,6 @@ class SeqConfidenceRAG(BasicRAG):
             response=response,
             docs=docs
         )
-        import IPython
-        IPython.embed()
         confs = self._generate_text_(
             conf_prompt,
             # 5 if self.generator.model_config.model_type in ['qwen2'] else 500,
@@ -1085,8 +1083,6 @@ class SeqConfidenceRAG(BasicRAG):
                     temp_conf = seq_conf   # 当前最靠近高置信度的句子，若无新增则判比较当前句子与上一轮最接近高置信度句子
                     temp_seq = sent
                     break
-            import IPython
-            IPython.embed()
             ptext_num = len(ptext.split())
             if "the answer is" in ptext or ptext_num > self.generate_max_length:
                 break
