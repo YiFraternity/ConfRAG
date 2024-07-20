@@ -321,19 +321,21 @@ class SingleRAG(BasicRAG):
         assert self.query_formulation == "direct"
         docs = self.retrieve(question, topk=self.retrieve_topk)
         # 对 topk 个 passage 生成 prompt
-        if len(demo) > 0:
-            examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
-        else:
-            examples = ""
         doc_str = ''
         if len(docs) > 0:
             doc_str += "Douments:\n"
             for i, doc in enumerate(docs):
                 doc_str += f"[{i+1}] {doc}\n"
+            doc_str += ANSWER_USE_DOCUS_TEMPLATE
 
+        if len(demo) > 0:
+            examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
+            doc_str += (' ' + ANSWER_USE_DEMO_TEMPLATE)  # 将回答格式放在文档后面
+        else:
+            examples = ""
         prompt = ANSWER_QUESTION_TEMPLETE.format(
             demo=examples,
-            docs=(ANSWER_USE_DOCUS_TEMPLATE + doc_str) if len(docs)>0 else doc_str,
+            docs=doc_str,
             question=question,
             gen_text="",
         )

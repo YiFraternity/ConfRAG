@@ -4,7 +4,8 @@ Question:
 Answer:
 {gen_text}"""
 
-ANSWER_USE_DOCUS_TEMPLATE = "Please answer the question based on the following documents.\n"
+ANSWER_USE_DOCUS_TEMPLATE = "Please answer the question based on the above documents."
+ANSWER_USE_DEMO_TEMPLATE = "Answer in the same format as the examples."
 
 CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.' I believe you have true knowledge, and I will provide you with `Context` and `Your response` which you generated base on the `Context`.
 Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the `Your Response`. If the reasoning process is given in `Your Response`, there may be a relatively high level of confidence. If the answer is given, please ensure that it is correct and give a high level of confidence.
