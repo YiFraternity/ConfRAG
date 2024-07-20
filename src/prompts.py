@@ -1,4 +1,4 @@
-ANSWER_QUESTION_TEMPLETE = """{docs}Please answer the question by reasoning step-by-step. And I expect the model to provide answers in a format consistent with the question and to only provide the answer without including the question. Additionally, please prefix each answer with "So, the answer is".
+ANSWER_QUESTION_TEMPLETE = """{demo}{docs}Please answer the question by reasoning step-by-step. And I expect the model to provide answers in a format consistent with the question and to only provide the answer without including the question. Additionally, please prefix each answer with "So, the answer is".
 Question:
 {question}
 Answer:

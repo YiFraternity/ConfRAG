@@ -290,9 +290,12 @@ class BasicRAG:
     def inference(self, question, demo, case):
         # non-retrieval
         assert self.query_formulation == "direct"
-        # examples = "".join([d["case"]+"\n" for d in demo])
+        if len(demo) > 0:
+            examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
+        else:
+            examples = ""
         prompt = ANSWER_QUESTION_TEMPLETE.format(
-            # demo=examples,
+            demo=examples,
             docs="",
             question=question,
             gen_text="",
@@ -318,7 +321,10 @@ class SingleRAG(BasicRAG):
         assert self.query_formulation == "direct"
         docs = self.retrieve(question, topk=self.retrieve_topk)
         # 对 topk 个 passage 生成 prompt
-        # examples = "".join([d["case"]+"\n" for d in demo])
+        if len(demo) > 0:
+            examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
+        else:
+            examples = ""
         doc_str = ''
         if len(docs) > 0:
             doc_str += "Douments:\n"
@@ -326,7 +332,7 @@ class SingleRAG(BasicRAG):
                 doc_str += f"[{i+1}] {doc}\n"
 
         prompt = ANSWER_QUESTION_TEMPLETE.format(
-            # demo=examples,
+            demo=examples,
             docs=(ANSWER_USE_DOCUS_TEMPLATE + doc_str) if len(docs)>0 else doc_str,
             question=question,
             gen_text="",
