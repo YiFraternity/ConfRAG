@@ -447,7 +447,7 @@ class TokenRAG(BasicRAG):
                     break
                 pos = apr + len(tokens[tr])
                 tr += 1
-            probs = [1 - exp(v) for v in logprobs[tid:tr+1]]
+            probs = [1 - exp(v) for v in logprobs[tid:tr]]
             probs = np.array(probs)
             if len(probs) == 0:
                 p = 0.
@@ -486,8 +486,13 @@ class TokenRAG(BasicRAG):
         ptext = ""
         while True:
             old_len = len(ptext)
-            prompt = "".join([d["case"]+"\n" for d in demo])
-            prompt += case + " " + ptext
+            docs = []
+            prompt = _get_answer_prompt_(
+                docs=docs,
+                demo=demo,
+                question=question,
+                text=ptext
+            )
             new_text, tokens, logprobs = self.generator.generate(
                 prompt,
                 self.generate_max_length,
@@ -495,36 +500,42 @@ class TokenRAG(BasicRAG):
             )
             if self.use_counter == True:
                 self.counter.add_generate(new_text, self.generator.tokenizer)
-            ptext, curr, hallucination = self.modifier(new_text, tokens, logprobs)
-            if not hallucination:
-                text = ptext.strip() + " " + new_text.strip()
-            else:
+            ptext_, curr, hallucination = self.modifier(new_text, tokens, logprobs)
+            ptext += " " + ptext_.strip()
+            if hallucination:
                 curr = curr.replace("[xxx]", "")
                 if self.query_formulation == "direct":
                     retrieve_question = curr
                 elif self.query_formulation == "forward_all":
-                    tmp_all = [question, ptext, curr]
+                    tmp_all = [question, ptext_, curr]
                     retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
                 else:
                     raise NotImplemented
-
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
-                prompt = "".join([d["case"]+"\n" for d in demo])
-                prompt += "Context:\n"
-                for i, doc in enumerate(docs):
-                    prompt += f"[{i+1}] {doc}\n"
-                prompt += "Answer in the same format as before.\n"
-                prompt += case + " " + ptext + " " + ptext.strip()
-                new_text, _, _ = self.generator.generate(prompt, self.generate_max_length)
+                prompt = _get_answer_prompt_(
+                    docs = docs,
+                    demo = demo,
+                    question = question,
+                    text = ptext
+                )
+                text, new_text, _, _ = self.generator.generate(
+                    prompt,
+                    self.generate_max_length,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                    top_k=self.top_k,
+                    repetition_penalty=self.repetition_penalty,
+                )
                 if self.use_counter == True:
-                    self.counter.add_generate(new_text, self.generator.tokenizer)
+                    self.counter.add_generate(text, self.generator.tokenizer)
                     self.counter.hallucinated += 1
-                ptext = ptext.strip() + " " + ptext.strip() + " " + new_text.strip()
+                ptext += (" " + new_text.strip())
 
             # 判断 token 的个数要少于 generate_max_length
             tokens_count = len(self.generator.tokenizer.encode(ptext))
-            if tokens_count > self.generate_max_length or len(ptext) <= old_len or "the answer is" in ptext:
+            if tokens_count > self.max_length or len(ptext) <= old_len or "the answer is" in ptext:
                 break
+            ptext = ptext.strip()
         return ptext
 
 
