@@ -7,8 +7,8 @@ ANSWER_NOT_USE_DOCS_TEMPLATE = """Please answer the question by reasoning step-b
 ANSWER_USE_DEMO_TEMPLATE = """And I hope you can answer the question in the same format as the examples, (i.e, ending with 'So, the answer is')."""
 ANSWER_NOT_USE_DEMO_TEMPLATE = """And I expect you to provide answers in a format consistent with the question and to only provide the answer without including the question. Additionally, please prefix each answer with "So, the answer is"."""
 
-CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.' I believe you have true knowledge, and I will provide you with `Context` and `Your response` which you generated base on the `Context`.
-Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the `Your Response`. If the reasoning process is given in `Your Response`, there may be a relatively high level of confidence. If the answer is given, please ensure that it is correct and give a high level of confidence.
+CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.' I believe you have true knowledge, and I will provide you with "Context" and "Your response" which you generated base on the "Context".
+Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the "Your Response".
 {docs}
 Context:
 {context}
@@ -16,7 +16,7 @@ Your Response:
 {response}
 Confidence:"""
 
-CONFIDENCE_USE_DOCS_PREFIX = "Below are the documents related to the `Context`. When you provide your confidence in 'Your Response', please refer to the documents"
+CONFIDENCE_USE_DOCS_PREFIX = """Below are the documents related to the "Context". When you provide your confidence in 'Your Response', please refer to the documents"""
 CONFIDENCE_USE_DOCUS_TEMPLATE = "Please provide your confidence in your response based on the above documents.\n"
 #"""Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.'
 #I believe you have true knowledge, and I will provide you with a specific context and your response. Please provide your score of confidence in your response to demonstrate your familiarity with the relevant knowledge. Please note that the score of confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge.
@@ -52,16 +52,19 @@ LAST_TRIAL_HEADER = 'You have attempted to answer the following question before 
 # 以避免无法像以前那样回答问题。使用它们来改进你正确回答给定问题的策略。
 
 # 作为老师，我将为你提供学生提出的问题、他们之前的推理步骤，以及他们最后一次失败的回复。请仔细阅读并分析学生的推理过程和失败的回复。识别出学生在推理过程中出现的错误，并提供建设性的反馈，帮助学生理解错误的根源，从而改进其推理能力。
-TUTOR_ADVICE_HEADER = "You are a knowledgeable tutor. I hope you can provide advice to help students as a tutor. I will give you a question, the student's previous reasoning content for the question, and their most recent fail responses."
-TUTOR_ADVICE_MIDDLE = "Please provide `Advice` in the same format as before. what's more, please carefully analyze the reason of failed responses and offer constructive advice to help them understand the root causes of these errors and improve their response skills."
+TUTOR_ADVICE_HEADER = "I hope you can provide advice to help student as a knowledgeable tutor. I will give you a question, the student's previous reasoning content for the question, and their most recent fail responses."
+TUTOR_USE_DOCS = """Below are the documents referred to by student while answering questions."""
+TUTOR_USE_DOCS_MIDDLE = """Please provide "Advice" in the same format as the examples based on above documents."""
+TUTOR_NOT_USE_DOCS_MIDDLE = """Please provide "Advice" in the same format as the examples."""
+TUTOR_ADVICE_MIDDLE = "What's more, please carefully analyze the reason of failed responses and offer constructive advice to help them understand the root causes of these errors and improve their response skills."
 ADVICE_TEMPLATE = """{header}
 
-(START OF EXAMPLES)
+Examples:
 {examples}
-(END OF EXAMPLES)
 
-{middle}Question: {question}
-Previous reasoning content:{history_resp}
+{docs}{middle}
+Question: {question}
+Previous reasoning: {history_resp}
 Fail Response: {response}
 Advice:"""
 
@@ -71,15 +74,18 @@ Advice:"""
 # 每道题都会为你提供一个问题和之前试验。仔细阅读问题和之前试验，以及提供的建议，并通过思考来改善试验。
 # 思考可以对当前情况进行推理，返回答案并完成任务。
 REFLECTION_HEADER = """You’re an advanced reasoning agent capable of self-reflection and continuous improvement. Each problem will provide you with a question, previous excellent responses, and the last failed response."""
-REFLECTION_MIDDLE = """Please provide `Reflection` in the same format as before, and follow the provided advice to modify the last failed response through reflection."""
+REFLECT_USE_DOC = """Below are the documents related to the question."""
+REFLECT_USE_DOC_MIDDLE = """Based on the Documents provided above and the Adivce given below, """
+REFLECT_NOT_USE_DOC_MIDDLE = """Based on the Adivce given below, """
+REFLECTION_MIDDLE = """you can modify the "Fail Response" in the same format as the Examples."""
 REFLECTION_TEMPLATE = """{header}
 
-(START OF EXAMPLES){examples}
-(END OF EXAMPLES)
+Examples:
+{examples}
 
-{middle}
+{docs}{middle}
 Question: {question}
-Previous reasoning content:{history_resp}
-Last Response:{response}
+Previous reasoning: {history_resp}
+Fail Response: {response}
 Advice: {tutor_ins}
-Reflection:"""
+Modified Response:"""

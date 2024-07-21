@@ -19,7 +19,8 @@ def split_sentences(text):
             i += 1
     return results
 
-def process_answer_text(text, pre_answer):
+def process_answer_text(raw_text, pre_answer):
+    text = raw_text
     ptns = r'(?i).*?\banswer\s*[:：]\s*'
     pattern = re.compile(ptns, re.DOTALL)
     result = re.sub(pattern, '', text)
@@ -28,7 +29,8 @@ def process_answer_text(text, pre_answer):
     return ' '.join(not_in_prompt_texts).strip()
 
 
-def process_confidence_text(text, prompt):
+def process_confidence_text(raw_text, prompt):
+    text = raw_text
     ptns_choice = [
         r'(?i).*?\bconfidence\s*[:：]\s*',
         r'(?i).*?\bmy confidence is',
@@ -47,6 +49,32 @@ def process_confidence_text(text, prompt):
     else:
         confs = 0.0
     return confs
+
+def process_advice_text(raw_text, prompt):
+    text = raw_text
+    ptns_choice = [
+        r'(?i).*?\badvice\s*[:：]\s*',
+        r'(?i).*?\bmy advice is',
+        r'(?i).*?\ba advice is',
+    ]
+    for ptns in ptns_choice:
+        pattern = re.compile(ptns, re.DOTALL)
+        text = re.sub(pattern, '', text)
+    text = text.replace('\n', ' ')
+    return text
+
+def process_reflect_text(raw_text, prompt):
+    text = raw_text
+    ptns_choice = [
+        r'(?i).*?\bmodified response\s*[:：]\s*',
+        r'(?i).*?\bmy modified response is',
+        r'(?i).*?\ba modified response is',
+    ]
+    for ptns in ptns_choice:
+        pattern = re.compile(ptns, re.DOTALL)
+        text = re.sub(pattern, '', text)
+    text = text.replace('\n', ' ')
+    return text
 
 if __name__ == '__main__':
     text = "1 This is a test. 2. This is another test. 3.This is a third test.\n 4. This is a fourth test."

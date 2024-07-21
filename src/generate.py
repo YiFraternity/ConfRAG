@@ -12,17 +12,29 @@ from prompts import *
 from utils import (
     process_answer_text,
     process_confidence_text,
+    process_advice_text,
+    process_reflect_text,
     split_sentences,
 )
 
 
-def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+nlp = spacy.load("en_core_web_sm")
+
+
+def _get_docstr_(docs):
     doc_str = ''
     if len(docs) > 0:
-        doc_str += "Douments:\n"
+        doc_str += "Documents:\n"
         for i, doc in enumerate(docs):
             doc_str += f"[{i+1}] {doc}\n"
+        doc_str += '\n'
+    return doc_str
 
+def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
+    doc_str = _get_docstr_(docs)
     if len(demo) > 0:
         examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
         examples += '\n'
@@ -41,24 +53,15 @@ def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
 
 def _get_conf_prompt_(question, history_resp, response, docs):
     context = question + " " + history_resp
-    doc_str = ''
+    doc_str = _get_docstr_(docs)
     if len(docs) > 0:
-        doc_str += "Douments:\n"
-        for i, doc in enumerate(docs):
-            doc_str += f"[{i+1}] {doc}\n"
-        doc_str = (CONFIDENCE_USE_DOCS_PREFIX + ' ' + doc_str)
+        doc_str = (CONFIDENCE_USE_DOCS_PREFIX + '\n' + doc_str)
     conf_prompt = CONFIDENCE_TEMPLATE.format(
         docs=doc_str,
         context=context,
         response=response,
     )
     return conf_prompt
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-nlp = spacy.load("en_core_web_sm")
-
 
 class BasicGenerator:
     def __init__(self, model_name_or_path):
@@ -102,6 +105,8 @@ class BasicGenerator:
             top_k=50,
             repetition_penalty=1.0,
             return_logprobs=False,
+            gen_type="answer",
+            process_gen_text=False,
         ):
         if self.model_config.model_type in ["llama", "qwen2"]:
             input_text = self._apply_chat_template_(input_text)
@@ -109,6 +114,18 @@ class BasicGenerator:
         input_ids = input_ids.to(self.model.device)
         input_length = input_ids.shape[1]
         attention_mask = torch.ones_like(input_ids)
+
+        # 对生成的内容进行一步处理
+        if gen_type == 'answer':
+            process_text = process_answer_text
+        elif gen_type == 'confidence':
+            process_text = process_confidence_text
+        elif gen_type == 'advice':
+            process_text = process_advice_text
+        elif gen_type == 'reflection':
+            process_text = process_reflect_text
+        else:
+            raise ValueError(f"gen_type {gen_type} is not supported")
 
         if return_logprobs:
             outputs = self.model.generate(
@@ -142,7 +159,10 @@ class BasicGenerator:
             )
             generated_tokens = outputs[:, input_length:]
             text = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
-            return text, None, None
+            processed_text = text
+            if process_gen_text:
+                processed_text = process_text(text, input_text)
+            return text, processed_text, None, None
 
     def generate_attn(self, input_text, max_length, solver="max", use_entropy = False, use_logprob = False):
         if self.model_config.model_type == "llama":
@@ -240,6 +260,7 @@ class Counter:
         self.hallucinated = 0
         self.token = 0
         self.sentence = 0
+        self.reflect = 0
 
     def add_generate(self, text, tokenizer):
         self.generate += 1
@@ -251,6 +272,7 @@ class Counter:
     def calc(self, other_counter):
         return {
             "retrieve_count": self.retrieve - other_counter.retrieve,
+            "reflect_count": self.reflect - other_counter.reflect,
             "generate_count": self.generate - other_counter.generate,
             "hallucinated_count": self.hallucinated - other_counter.hallucinated,
             "token_count": self.token - other_counter.token,
@@ -329,7 +351,7 @@ class BasicRAG:
         # non-retrieval
         assert self.query_formulation == "direct"
         prompt = _get_answer_prompt_([], demo=demo, question=question, text="")
-        text, _, _ = self.generator.generate(
+        text, _, _, _ = self.generator.generate(
             prompt,
             max_length=self.generate_max_length,
             temperature=self.temperature,
@@ -351,7 +373,14 @@ class SingleRAG(BasicRAG):
         docs = self.retrieve(question, topk=self.retrieve_topk)
         # 对 topk 个 passage 生成 prompt
         prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text="")
-        text, _, _ = self.generator.generate(prompt, self.generate_max_length)
+        text, _, _, _ = self.generator.generate(
+            prompt,
+            self.generate_max_length,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            repetition_penalty=self.repetition_penalty,
+        )
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
         return text
@@ -361,49 +390,39 @@ class FixLengthRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
-    def _generate_text_(self, prompt, generate_max_length, return_logprobs=False, pre_answer=''):
-        gen_text, _, _ = self.generator.generate(
-            prompt,
-            generate_max_length,
-            return_logprobs=return_logprobs,
-        )
-        text = process_answer_text(gen_text, pre_answer)
-        return text
-
     def inference(self, question, demo, case):
-        text = ""
+        assert self.query_formulation == "direct"
+        ptext = ""
+        docs = []
         while True:
-            old_len = len(text)
-            if self.query_formulation == "direct":
-                retrieve_question = question
-            elif self.query_formulation == "forward_all":
-                tmp_all = [question, text]
-                retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
-            docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+            old_len = len(ptext)
             # 对 topk 个 passage 生成 prompt
-
-            prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text=text)
-            if self.method == "fix-length-retrieval":
-                new_text, _, _ = self.generator.generate(prompt, self.fix_length)
-                if self.use_counter == True:
-                    self.counter.add_generate(new_text, self.generator.tokenizer)
-                text = text.strip() + " " + new_text.strip()
-            else:
+            prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text=ptext)
+            text, answer, _, _ = self.generator.generate(
+                prompt,
+                self.fix_length,
+                temperature=self.temperature,
+                top_p=self.top_p,
+                top_k=self.top_k,
+                repetition_penalty=self.repetition_penalty,
+                process_gen_text=True,
+            )
+            if self.use_counter == True:
+                self.counter.add_generate(text, self.generator.tokenizer)
+            if self.method == "fix-sentence-retrieval":
                 # fix sentence
-                new_text = self._generate_text_(prompt, self.generate_max_length, pre_answer=text)
-                if self.use_counter == True:
-                    self.counter.add_generate(new_text, self.generator.tokenizer)
-                new_text = new_text.strip()
-                sentences = [sent.text.strip() for sent in nlp(text).sents]
-                sentences = [sent for sent in sentences if len(sent) > 0]
+                sentences = list(nlp(answer).sents)
+                sentences = [str(sent).strip() for sent in sentences]
                 if len(sentences) == 0:
                     break
-                text = text.strip() + " " + (" ".join(sentences[:4]))
-
+                answer = sentences[0]
+            ptext += (" " + answer.strip())
+            ptext = ptext.strip()
             # 判断 token 的个数要少于 generate_max_length
-            tokens_count = len(self.generator.tokenizer.encode(text))
-            if tokens_count > self.generate_max_length or len(text) <= old_len or "the answer is" in text:
+            tokens_count = len(self.generator.tokenizer.encode(ptext))
+            if tokens_count > self.generate_max_length or len(ptext) <= old_len or "the answer is" in ptext:
                 break
+            docs = self.retrieve(question, topk=self.retrieve_topk)
         return text
 
 
@@ -464,11 +483,11 @@ class TokenRAG(BasicRAG):
 
     def inference(self, question, demo, case):
         # assert self.query_formulation == "direct"
-        text = ""
+        ptext = ""
         while True:
-            old_len = len(text)
+            old_len = len(ptext)
             prompt = "".join([d["case"]+"\n" for d in demo])
-            prompt += case + " " + text
+            prompt += case + " " + ptext
             new_text, tokens, logprobs = self.generator.generate(
                 prompt,
                 self.generate_max_length,
@@ -478,7 +497,7 @@ class TokenRAG(BasicRAG):
                 self.counter.add_generate(new_text, self.generator.tokenizer)
             ptext, curr, hallucination = self.modifier(new_text, tokens, logprobs)
             if not hallucination:
-                text = text.strip() + " " + new_text.strip()
+                text = ptext.strip() + " " + new_text.strip()
             else:
                 curr = curr.replace("[xxx]", "")
                 if self.query_formulation == "direct":
@@ -495,18 +514,18 @@ class TokenRAG(BasicRAG):
                 for i, doc in enumerate(docs):
                     prompt += f"[{i+1}] {doc}\n"
                 prompt += "Answer in the same format as before.\n"
-                prompt += case + " " + text + " " + ptext.strip()
+                prompt += case + " " + ptext + " " + ptext.strip()
                 new_text, _, _ = self.generator.generate(prompt, self.generate_max_length)
                 if self.use_counter == True:
                     self.counter.add_generate(new_text, self.generator.tokenizer)
                     self.counter.hallucinated += 1
-                text = text.strip() + " " + ptext.strip() + " " + new_text.strip()
+                ptext = ptext.strip() + " " + ptext.strip() + " " + new_text.strip()
 
             # 判断 token 的个数要少于 generate_max_length
-            tokens_count = len(self.generator.tokenizer.encode(text))
-            if tokens_count > self.generate_max_length or len(text) <= old_len or "the answer is" in text:
+            tokens_count = len(self.generator.tokenizer.encode(ptext))
+            if tokens_count > self.generate_max_length or len(ptext) <= old_len or "the answer is" in ptext:
                 break
-        return text
+        return ptext
 
 
 class EntityRAG(TokenRAG):
@@ -909,33 +928,6 @@ class SeqConfidenceRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
-    def _generate_text_(
-            self,
-            prompt,
-            return_logprobs=False,
-            gen_type='answer',
-            pre_answer=''
-        ):
-        if gen_type == 'answer':
-            max_length = self.generate_max_length
-        elif gen_type == 'confidence':
-            max_length = self.generate_confidence_length
-        gen_text, _, _ = self.generator.generate(
-            prompt,
-            max_length=max_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            repetition_penalty=self.repetition_penalty,
-            return_logprobs=return_logprobs,
-        )
-        if gen_type == 'answer':
-            process_text = process_answer_text
-        elif gen_type == 'confidence':
-            process_text = process_confidence_text
-        text = process_text(gen_text, pre_answer)
-        return text
-
     def _get_seq_confs_(self, question, history_resp, response, docs):
         conf_prompt = _get_conf_prompt_(
             question=question,
@@ -943,52 +935,79 @@ class SeqConfidenceRAG(BasicRAG):
             response=response,
             docs=docs
         )
-        confs = self._generate_text_(
+        text, confs, _, _ = self.generator.generate(
             conf_prompt,
-            # 5 if self.generator.model_config.model_type in ['qwen2'] else 500,
+            max_length=self.generate_confidence_length,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            repetition_penalty=self.repetition_penalty,
             return_logprobs=False,
             gen_type='confidence',
+            process_gen_text=True,
         )
+        if self.use_counter:
+            self.counter.add_generate(text, self.generator.tokenizer)
         return confs
 
-    def _reflection_(self, question, history_resp, response):
+    def _reflection_(self, question, history_resp, response, docs=[]):
         """
         # 反思需要两次生成
         # 1. tutor-advice: 用于指导从哪个层面思考
         # 2. Refine: 用于提升回复的质量
         """
+        if self.use_counter:
+            self.counter.reflect += 1
+        doc_str = _get_docstr_(docs)
         tutor_data = {
             "header": TUTOR_ADVICE_HEADER,
             "examples": TUTOR_ADVICE_EXAMPLES,
-            "middle": TUTOR_ADVICE_MIDDLE,
+            "docs": (TUTOR_USE_DOCS + '\n' + doc_str) if len(docs) > 0 else doc_str,
+            "middle": (TUTOR_USE_DOCS_MIDDLE if len(docs) > 0 else TUTOR_NOT_USE_DOCS_MIDDLE) +  " " + TUTOR_ADVICE_MIDDLE,
             "question": question,
-            "history_resp": history_resp,
+            "history_resp": history_resp.replace('\n', ' '),
             "response": response,
         }
-
         advice_prompt = ADVICE_TEMPLATE.format(**tutor_data)
-        advice, _, _ = self.generator.generate(
+        text, advice, _, _ = self.generator.generate(
             advice_prompt,
-            500,
-            return_logprobs=False
+            max_length=self.generate_max_length,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            repetition_penalty=self.repetition_penalty,
+            return_logprobs=False,
+            gen_type='advice',
+            process_gen_text=True,
         )
-        advice = advice.strip()
+        if self.use_counter:
+            self.counter.add_generate(text, self.generator.tokenizer)
+
         reft_prompt = {
             "header": REFLECTION_HEADER,
             "examples": REFLECT_EXAMPLES,
-            "middle": REFLECTION_MIDDLE,
+            "docs": (REFLECT_USE_DOC + '\n' + doc_str + '\n') if len(docs) > 0 else doc_str,
+            "middle": (REFLECT_USE_DOC_MIDDLE if len(docs) > 0 else REFLECT_NOT_USE_DOC_MIDDLE) + REFLECTION_MIDDLE,
             "question": question,
-            "history_resp": history_resp,
+            "history_resp": history_resp.replace('\n', ' '),
             "response": response,
             "tutor_ins": advice,
         }
         reflect_prompt = REFLECTION_TEMPLATE.format(**reft_prompt)
-        reflect, _, _ = self.generator.generate(
+        text, reflect, _, _ = self.generator.generate(
             reflect_prompt,
-            500,
+            max_length=self.generate_max_length,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            repetition_penalty=self.repetition_penalty,
             return_logprobs=False,
+            gen_type='reflection',
+            process_gen_text=True,
         )
-        return reflect.strip()
+        if self.use_counter:
+            self.counter.add_generate(text, self.generator.tokenizer)
+        return reflect
 
     def modifier(self, question, ptext, text, docs):
         """
@@ -1016,7 +1035,7 @@ class SeqConfidenceRAG(BasicRAG):
                 # 根据置信度进行幻觉判断，如果需要反思，则调用self._reflection生成反思后的文本，之后再对生成的新文本进行置信度的判断，如果置信度比之前的文本高则进行置信度的替换
                 # 若置信度过低，则将该句子mask掉
                 print(f'cur confs:{confs}, performed reflect')
-                reft_text = self._reflection_(question, history_resp, sent)
+                reft_text = self._reflection_(question, history_resp, sent, docs)
                 reft_cons = self._get_seq_confs_(question, history_resp, reft_text, docs)
                 if reft_cons >= confs:
                     modify_text = reft_text
@@ -1039,16 +1058,22 @@ class SeqConfidenceRAG(BasicRAG):
         pre_seq_conf = -1
         pre_seq = ''    # 如果前一轮句子的置信度高于这一轮句子，应该使用前一轮的句子
         temp_conf = 0
-        epoch = 0
         while True:
             prompt = _get_answer_prompt_(docs, demo, question, ptext)
             # 当前轮次的新文本
-            new_text = self._generate_text_(
+            text, new_text, _, _ = self.generator.generate(
                 prompt,
-                pre_answer=ptext,
+                max_length=self.generate_max_length,
+                temperature=self.temperature,
+                top_p=self.top_p,
+                top_k=self.top_k,
+                repetition_penalty=self.repetition_penalty,
+                return_logprobs=False,
+                gen_type='answer',
+                process_gen_text=True,
             )
-            if self.use_counter == True:
-                self.counter.add_generate(new_text, self.generator.tokenizer)
+            if self.use_counter:
+                self.counter.add_generate(text, self.generator.tokenizer)
 
             all_seqs, all_seqs_confs, modified_texts, hallucination = self.modifier(
                 question,
