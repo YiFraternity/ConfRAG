@@ -488,7 +488,7 @@ class TokenRAG(BasicRAG):
         # assert self.query_formulation == "direct"
         ptext = ""
         while True:
-            old_len = len(ptext)
+            old_len = len(self.generator.tokenizer.encode(ptext)) if ptext != "" else 0
             docs = []
             prompt = _get_answer_prompt_(
                 docs=docs,
@@ -831,7 +831,7 @@ class AttnWeightRAG(BasicRAG):
         text = ""
         docs = []
         while True:
-            old_len = len(text)
+            old_len = len(self.generator.tokenizer.encode(text)) if text != "" else 0
             examples = "".join([d["case"]+"\n" for d in demo])
             doc_str = ''
             if len(docs) > 0:
@@ -1071,6 +1071,7 @@ class SeqConfidenceRAG(BasicRAG):
         pre_seq_conf = -1
         pre_seq = ''    # 如果前一轮句子的置信度高于这一轮句子，应该使用前一轮的句子
         temp_conf = 0
+        old_len = 0
         while True:
             prompt = _get_answer_prompt_(docs, demo, question, ptext)
             # 当前轮次的新文本
@@ -1121,9 +1122,7 @@ class SeqConfidenceRAG(BasicRAG):
                     temp_conf = seq_conf   # 当前最靠近高置信度的句子，若无新增则判比较当前句子与上一轮最接近高置信度句子
                     temp_seq = sent
                     break
-            ptext_num = len(ptext.split())
-            if "the answer is" in ptext or ptext_num > self.generate_max_length:
-                break
+
             if pre_seq_conf > temp_conf:
                 ptext += pre_seq + " "
             elif pre_seq_conf == temp_conf:
@@ -1131,4 +1130,11 @@ class SeqConfidenceRAG(BasicRAG):
             else:
                 pre_seq = temp_seq
                 pre_seq_conf = temp_conf
+
+            cur_len = len(self.generator.tokenizer.encode(ptext)) if ptext != "" else 0
+
+            if "the answer is" in ptext or cur_len >= self.max_length or cur_len <= old_len:
+                break
+
+            old_len = cur_len
         return ptext
