@@ -140,11 +140,14 @@ class BasicGenerator:
             )
 
             generated_tokens = outputs.sequences[:, input_length:]
-            text = self.tokenizer.decode(generated_tokens[0]) # text = "".join(tokens)
-            tokens = [self.tokenizer.decode(t) for t in generated_tokens[0]]
+            text = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True) # text = "".join(tokens)
+            tokens = [self.tokenizer.decode(t, skip_special_tokens=True) for t in generated_tokens[0]]
+            special_tokens_index = [idx for idx, t in enumerate(tokens) if t == '']
             logprobs = transition_scores[0]
             logprobs = [p.cpu().numpy() for p in logprobs]
             assert len(tokens) == len(logprobs)
+            tokens = [ t for idx, t in enumerate(tokens) if idx not in special_tokens_index]     # remove sepical token
+            logprobs = [p for idx, p in enumerate(logprobs) if idx not in special_tokens_index]     # remove sepical token
             return text, tokens, logprobs
 
         else:
@@ -530,12 +533,11 @@ class TokenRAG(BasicRAG):
                     self.counter.add_generate(text, self.generator.tokenizer)
                     self.counter.hallucinated += 1
                 ptext += (" " + new_text.strip())
-
+            ptext = ptext.strip()
             # 判断 token 的个数要少于 generate_max_length
             tokens_count = len(self.generator.tokenizer.encode(ptext))
-            if tokens_count > self.max_length or len(ptext) <= old_len or "the answer is" in ptext:
+            if tokens_count >= self.max_length or len(ptext) <= old_len or "the answer is" in ptext:
                 break
-            ptext = ptext.strip()
         return ptext
 
 
