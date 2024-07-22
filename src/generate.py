@@ -394,11 +394,10 @@ class FixLengthRAG(BasicRAG):
         super().__init__(args)
 
     def inference(self, question, demo, case):
-        assert self.query_formulation == "direct"
         ptext = ""
         docs = []
+        old_len = -1
         while True:
-            old_len = len(ptext)
             # 对 topk 个 passage 生成 prompt
             prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text=ptext)
             text, answer, _, _ = self.generator.generate(
@@ -425,7 +424,13 @@ class FixLengthRAG(BasicRAG):
             tokens_count = len(self.generator.tokenizer.encode(ptext))
             if tokens_count > self.generate_max_length or len(ptext) <= old_len or "the answer is" in ptext:
                 break
-            docs = self.retrieve(question, topk=self.retrieve_topk)
+
+            if self.query_formulation == "forward_all":
+                tmp_all = [question, ptext]
+                retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
+            else:
+                retrieve_question = question
+            docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         return text
 
 
@@ -1099,7 +1104,7 @@ class SeqConfidenceRAG(BasicRAG):
             if hallucination:
                 forward_all = [question, ptext.strip(), modified_texts]
                 forward_all = " ".join(s for s in forward_all if len(s) > 0)
-                forward_all = forward_all.replace("[xxx].", " ")
+                forward_all = forward_all.replace("[xxx].", "")
                 if self.query_formulation == "forward_all":
                     retrieve_question = forward_all
                 else:

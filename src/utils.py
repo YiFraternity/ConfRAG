@@ -19,12 +19,19 @@ def split_sentences(text):
             i += 1
     return results
 
+def is_complete_sentence(sentence):
+    # 检查最后一个字符是否是中英文的句号、问号或感叹号
+    return sentence.endswith(('。', '？', '！', '.', '?', '!'))
+
 def process_answer_text(raw_text, pre_answer):
     text = raw_text
     ptns = r'(?i).*?\banswer\s*[:：]\s*'
     pattern = re.compile(ptns, re.DOTALL)
     result = re.sub(pattern, '', text)
     all_texts = split_sentences(result)
+    if len(all_texts) > 1:
+        last_txt = all_texts[-1]
+        all_texts = all_texts if is_complete_sentence(last_txt) else all_texts[:-1]
     not_in_prompt_texts = [text for text in all_texts if text not in pre_answer]
     return ' '.join(not_in_prompt_texts).strip()
 
