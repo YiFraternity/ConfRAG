@@ -492,8 +492,8 @@ class TokenRAG(BasicRAG):
     def inference(self, question, demo, case):
         # assert self.query_formulation == "direct"
         ptext = ""
+        old_len = -1
         while True:
-            old_len = len(self.generator.tokenizer.encode(ptext)) if ptext != "" else 0
             docs = []
             prompt = _get_answer_prompt_(
                 docs=docs,
@@ -541,8 +541,9 @@ class TokenRAG(BasicRAG):
             ptext = ptext.strip()
             # 判断 token 的个数要少于 generate_max_length
             tokens_count = len(self.generator.tokenizer.encode(ptext))
-            if tokens_count >= self.max_length or len(ptext) <= old_len or "the answer is" in ptext:
+            if tokens_count >= self.max_length or tokens_count <= old_len or "the answer is" in ptext:
                 break
+            old_len = tokens_count
         return ptext
 
 
@@ -1076,7 +1077,8 @@ class SeqConfidenceRAG(BasicRAG):
         pre_seq_conf = -1
         pre_seq = ''    # 如果前一轮句子的置信度高于这一轮句子，应该使用前一轮的句子
         temp_conf = 0
-        old_len = 0
+        temp_seq = ''
+        old_len = -1
         while True:
             prompt = _get_answer_prompt_(docs, demo, question, ptext)
             # 当前轮次的新文本
