@@ -132,6 +132,10 @@ class BasicGenerator:
                 input_ids = input_ids,
                 attention_mask = attention_mask,
                 max_new_tokens = max_length,
+                temperature = temperature,
+                top_p = top_p,
+                top_k = top_k,
+                repetition_penalty=repetition_penalty,
                 return_dict_in_generate = True,
                 output_scores = True,
             )
@@ -167,8 +171,19 @@ class BasicGenerator:
                 processed_text = process_text(text, input_text)
             return text, processed_text, None, None
 
-    def generate_attn(self, input_text, max_length, solver="max", use_entropy = False, use_logprob = False):
-        if self.model_config.model_type == "llama":
+    def generate_attn(
+            self,
+            input_text,
+            max_length,
+            solver="max",
+            temperature=0.6,
+            top_p=0.9,
+            top_k=50,
+            repetition_penalty=1.0,
+            use_entropy = False,
+            use_logprob = False,
+        ):
+        if self.model_config.model_type in ["llama", "qwen2"]:
             input_text = self._apply_chat_template_(input_text)
 
         input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
@@ -180,18 +195,28 @@ class BasicGenerator:
             input_ids = input_ids,
             attention_mask = attention_mask,
             max_new_tokens = max_length,
+            temperature = temperature,
+            top_p = top_p,
+            top_k = top_k,
+            repetition_penalty = repetition_penalty,
             return_dict_in_generate = True,
             output_scores = True,
         )
         generated_tokens = outputs.sequences[:, input_length:]
-        tokens = self.tokenizer.convert_ids_to_tokens(generated_tokens[0])
-        text = self.tokenizer.decode(generated_tokens[0])
-
+        tokens = [self.tokenizer.decode(t, skip_special_tokens=True) for t in generated_tokens[0]]
+        text = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
+        special_tokens_idx = [idx for idx, t in enumerate(tokens) if t == '']
+        special_tokens_idx_t = torch.tensor(special_tokens_idx, dtype=torch.int)
+        tokens = [t for idx, t in enumerate(tokens) if idx not in special_tokens_idx]     # remove sepical token
+        mask = torch.ones(generated_tokens.shape[1], dtype=torch.bool)
+        mask[special_tokens_idx_t] = False
+        generated_tokens = generated_tokens[:, mask]
+        assert len(tokens) == generated_tokens.shape[1]
         # merge tokens
         range_ = []
         for i, t in enumerate(tokens):
             # if i == 0 or t.startswith(self.space_token) or generated_tokens[0][i] == 13 or tokens[i-1] == '</s>':
-            if i == 0 or t.startswith(self.space_token) or generated_tokens[0][i] == 128009 or tokens[i-1] == '<|eot_id|>': # llama3
+            if i == 0 or t.startswith(' '):
                 range_.append([i, i])
             else:
                 range_[-1][-1] += 1
@@ -218,7 +243,7 @@ class BasicGenerator:
         seqlist = []
         attns = []
         for r in range_:
-            tokenseq = "".join(tokens[r[0]: r[1]+1]).replace(self.space_token, "")
+            tokenseq = "".join(tokens[r[0]: r[1]+1]).replace(' ', "")
             value = sum(mean_atten[r[0]: r[1]+1]).item()
             seqlist.append(tokenseq)
             attns.append(value)
@@ -831,28 +856,16 @@ class AttnWeightRAG(BasicRAG):
         return " ".join([x[1] for x in real_pairs])
 
     def inference(self, question, demo, case):
-        # assert self.query_formulation == "direct"
-        # print(question)
-        # print("#" * 20)
-        text = ""
+        ptext = ""
         docs = []
+        old_len = -1
         while True:
-            old_len = len(self.generator.tokenizer.encode(text)) if text != "" else 0
-            examples = "".join([d["case"]+"\n" for d in demo])
-            doc_str = ''
-            if len(docs) > 0:
-                doc_str += "Douments:\n"
-                for i, doc in enumerate(docs):
-                    doc_str += f"[{i+1}] {doc}\n"
-                doc_str += "Please answer the question based on the documents and the previous response.\n"
-
-            prompt = ANSWER_QUESTION_TEMPLETE.format(
-                demo=examples,
-                docs=doc_str,
+            prompt = _get_answer_prompt_(
+                docs=docs,
+                demo=demo,
                 question=question,
+                text=ptext,
             )
-            # print('####', prompt)
-            # prompt += case + " " + text
             new_text, tokens, attns, logprobs, entropies = self.generator.generate_attn(
                 prompt,
                 self.generate_max_length,
@@ -864,15 +877,18 @@ class AttnWeightRAG(BasicRAG):
 
             if self.use_counter == True:
                 self.counter.add_generate(new_text, self.generator.tokenizer)
-            hallucination, ptext, curr_tokens, curr_hit =  self.modifier(new_text, tokens, attns, weight)
+            hallucination, ptext_, curr_tokens, curr_hit =  self.modifier(new_text, tokens, attns, weight)
 
             if not hallucination:
-                text = text.strip() + " " + new_text.strip()
+                ptext += (" " + new_text.strip())
+                ptext = ptext.strip()
             else:
-                forward_all = [question, text, ptext]
+                ptext += (" " + ptext_.strip())
+                ptext = ptext.strip()
+                forward_all = [question, ptext]
                 forward_all = " ".join(s for s in forward_all if len(s) > 0)
 
-                def fetch_last_n_tokens(text, num, tokenizer = self.generator.tokenizer):
+                def fetch_last_n_tokens(text, num, tokenizer=self.generator.tokenizer):
                     tokens = tokenizer.tokenize(text)
                     if num >= len(tokens):
                         return text
@@ -901,7 +917,7 @@ class AttnWeightRAG(BasicRAG):
 
                 elif self.query_formulation == "real_words":
                     retrieve_question = self.keep_real_words(
-                        prev_text = question + " " + text + " " + ptext,
+                        prev_text = question + " " + ptext,
                         curr_tokens = curr_tokens,
                         curr_hit = curr_hit,
                     )
@@ -909,38 +925,32 @@ class AttnWeightRAG(BasicRAG):
                     raise NotImplemented
 
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
-                prompt = "".join([d["case"]+"\n" for d in demo])
-                prompt += "Context:\n"
-                for i, doc in enumerate(docs):
-                    prompt += f"[{i+1}] {doc}\n"
-                prompt += "Answer in the same format as before.\n"
-                tmp_li = [case, text, ptext.strip()]
-                prompt += " ".join(s for s in tmp_li if len(s) > 0)
-                # print('#####', prompt)
-                # prompt += case + " " + text + " " + ptext.strip()
-                new_text, _, _ = self.generator.generate(prompt, self.generate_max_length)
+                prompt = _get_answer_prompt_(
+                    docs=docs,
+                    demo=demo,
+                    question=question,
+                    text=ptext,
+                )
+                new_text, _, _, _ = self.generator.generate(
+                    prompt,
+                    max_length = self.generate_max_length,
+                    temperature = self.temperature,
+                    top_p = self.top_p,
+                    top_k = self.top_k,
+                    process_gen_text = False,
+                )
                 if self.use_counter == True:
                     self.counter.add_generate(new_text, self.generator.tokenizer)
                     self.counter.hallucinated += 1
                 new_text = self.get_top_sentence(new_text)
-                tmp_li = [text.strip(), ptext.strip(), new_text.strip()]
-                text = " ".join(s for s in tmp_li if len(s) > 0)
-                # text = text.strip() + " " + ptext.strip() + " " + new_text.strip()
-
-                # print("### retrieve_question ###")
-                # print(retrieve_question)
-                # context = "### Context: ###\n"
-                # for i, doc in enumerate(docs):
-                #     context += f"[{i+1}] {doc}\n"
-                # print(context)
-                # print(text)
+                ptext += (" " + new_text.strip())
 
             # 判断 token 的个数要少于 generate_max_length
-            tokens_count = len(self.generator.tokenizer.encode(text))
-            if tokens_count > self.generate_max_length or len(text) <= old_len or "the answer is" in text:
+            tokens_count = len(self.generator.tokenizer.encode(ptext))
+            if tokens_count > self.generate_max_length or tokens_count <= old_len or "the answer is" in ptext:
                 break
-        # print("#" * 20)
-        return text
+            old_len = tokens_count
+        return ptext
 
 
 class SeqConfidenceRAG(BasicRAG):
