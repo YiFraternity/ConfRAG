@@ -1102,6 +1102,9 @@ class SeqConfidenceRAG(BasicRAG):
             if not seq_conf >= self.hallucination_threshold:
                 break
         modified_text = ' '.join(modified_texts)
+        if len(ptexts_) == 0:
+            ptexts_ = ['']
+            pconfs_ = [-1]
         return ptexts_, pconfs_, modified_text, hallucination
 
     def inference(self, question, demo, case):
