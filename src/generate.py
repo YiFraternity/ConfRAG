@@ -428,7 +428,7 @@ class FixLengthRAG(BasicRAG):
             prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text=ptext)
             text, answer, _, _ = self.generator.generate(
                 prompt,
-                self.fix_length,
+                self.generate_max_length,
                 temperature=self.temperature,
                 top_p=self.top_p,
                 top_k=self.top_k,
@@ -446,9 +446,9 @@ class FixLengthRAG(BasicRAG):
                 answer = sentences[0]
             ptext += (" " + answer.strip())
             ptext = ptext.strip()
-            # 判断 token 的个数要少于 generate_max_length
+            # 判断 token 的个数要少于 max_length
             tokens_count = len(self.generator.tokenizer.encode(ptext))
-            if tokens_count > self.generate_max_length or tokens_count <= old_len or "the answer is" in ptext:
+            if tokens_count >= self.max_length or tokens_count <= old_len or "the answer is" in ptext:
                 break
             old_len = tokens_count
 
@@ -1172,18 +1172,18 @@ class SeqConfidenceRAG(BasicRAG):
                     cur_len >= self.max_length or \
                     cur_len <= old_len or \
                     retr_num >= self.max_retrieve:
-                if is_ans_unknown(ptexts[-1]):
+                if len(ptexts)==0 or is_ans_unknown(ptexts[-1]):
                     ptext = ' '.join(ptexts[:-1])
                     docs = self._get_retr_docs_(question, ptext)
                     prompt = _get_answer_prompt_(
                         docs,
                         demo,
                         question,
-                        text = ' '.join(ptexts[:-1])
+                        text=ptext,
                     )
                     text, new_text, _, _ = self.generator.generate(
                         prompt,
-                        max_length=self.generate_max_length,
+                        max_length=self.max_length,
                         temperature=self.temperature,
                         top_p=self.top_p,
                         top_k=self.top_k,
@@ -1193,6 +1193,7 @@ class SeqConfidenceRAG(BasicRAG):
                         process_gen_text=True,
                     )
                     ptext += (' ' + new_text)
+                    ptext = ptext.strip()
                 break
             old_len = cur_len
 

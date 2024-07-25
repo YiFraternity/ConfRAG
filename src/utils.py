@@ -85,8 +85,38 @@ def process_reflect_text(raw_text, prompt):
 
 
 def is_ans_unknown(answer) -> bool:
-    # if re.search(r'(?i).*?\bunknown\b.*', answer):
-    #     return True
+    unknown_values = [
+        "not provided",
+        "cannot definitively",
+        "not explicitly",
+        "not applicable",
+        "not available",
+        "cannot be",
+        "unknown",
+        "unsure",
+        "not sure",
+        "There's no",
+        "don't know",
+        "inconclusive",
+        "not found",
+        "uncertainty",
+        "none",
+        "unable",
+        "not enough",
+        "not specified",
+        "not determined",
+        "not disclosed",
+        "not revealed",
+        "not mentioned",
+        "not known",
+        "not stated",
+        "not directly",
+    ]
+    if any(re.search(r'(?i).*?\b{}\b.*'.format(value), answer) for value in unknown_values):
+        return True
+    pattern = r'(?i)the answer is[：:]?$'
+    if re.search(pattern, answer):
+        return True
     return False
 
 
@@ -95,6 +125,16 @@ if __name__ == '__main__':
     # sents = split_sentences(text)
     # print(len(sents), sents)
     text = """Sure, I\'d be happy to help! Based on the context you provided, my response would be:\n\n"1. Seraphim is a concept in Christian theology, referring to a high rank of angels."\n\nMy confidence in this response is 1, as I am familiar with the concept of Seraphim in Christian theology and can provide a correct definition.</s>"""
-
-    print(process_confidence_text(text))
+    test_txts = ["I don't know", "I'm not sure", "The answer is unknown", "The answer is A"]
+    unknow_answer = []
+    with open('results/SeqRAG/Qwen1.5-7B-Chat/hotpotqa/BGEReranker/output.txt', 'r') as f:
+        for line in f:
+            text = line.strip()
+            import json
+            data = json.loads(text)
+            pred = data['prediction']
+            answer = split_sentences(pred)[-1].strip()
+            if is_ans_unknown(answer):
+                unknow_answer.append(data['qid'])
+    # print(process_confidence_text(text))
 
