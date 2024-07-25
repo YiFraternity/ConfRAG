@@ -15,6 +15,7 @@ from utils import (
     process_advice_text,
     process_reflect_text,
     split_sentences,
+    is_ans_unknown,
 )
 
 
@@ -980,6 +981,18 @@ class SeqConfidenceRAG(BasicRAG):
             self.counter.add_generate(text, self.generator.tokenizer)
         return confs
 
+    def _get_retr_docs_(self, question, addition_info):
+        forward_all = [question, addition_info]
+        forward_all = " ".join(s for s in forward_all if len(s) > 0)
+        forward_all = forward_all.replace("[xxx].", "")
+        if self.query_formulation == "forward_all":
+            retrieve_question = forward_all
+        else:
+            raise NotImplemented
+        docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+        docs = docs.tolist()
+        return docs
+
     def _reflection_(self, question, history_resp, response, docs=[]):
         """
         # 反思需要两次生成
@@ -1044,22 +1057,22 @@ class SeqConfidenceRAG(BasicRAG):
         按模型对新生成的内容判断自信度进行修改。删除置信度不高的文本
 
         Return:
-            sentences: list of str, the sentences in the text
-            confs_socres: list of float, the confidence score for each sentence
-            new_text: str, the new text with the highest confidence score
-            hallucination: bool, whether the new text is hallucinated
+            ptexts_: list of str, sentences that exceed the hullucination threshold for first. If there are none, retain the first sentence.
+            pconfs_: list of float, the confidence score for sentence in the ptexts_
+            modified_text: str, need to retrieved sentence
+            hallucination: bool, whether the text is hallucinated
         """
         hallucination = False
 
         reflect_tag = True   # 仅仅在前面所有句子置信度都高的情况下才可以反思，若前面出现了置信度较低的情况，则反思无效
         sentences = split_sentences(text)
         confs_socres = []
-        history_resp = ptext + ' '
+        history_resp = ptext
         modified_texts = []
         for i, sent in enumerate(sentences):
             modify_text = sent
             if i > 0:
-                history_resp += sentences[i-1]
+                history_resp += (' ' + sentences[i-1])
             confs = self._get_seq_confs_(question, history_resp, sent, docs)
             if confs < self.reflection_threshold and confs >= self.hallucination_threshold and reflect_tag:
                 # 根据置信度进行幻觉判断，如果需要反思，则调用self._reflection生成反思后的文本，之后再对生成的新文本进行置信度的判断，如果置信度比之前的文本高则进行置信度的替换
@@ -1078,18 +1091,28 @@ class SeqConfidenceRAG(BasicRAG):
 
             modified_texts.append(modify_text)
             confs_socres.append(confs)
-        modified_text = ' '.join(modified_texts)
 
-        return sentences, confs_socres, modified_text, hallucination
+        assert len(sentences) == len(confs_socres)
+        ptexts_, pconfs_ = [], []
+        for seq_conf, sent in zip(confs_socres, sentences):
+            if sent in ptext:
+                continue
+            ptexts_.append(sent)
+            pconfs_.append(seq_conf)
+            if not seq_conf >= self.hallucination_threshold:
+                break
+        modified_text = ' '.join(modified_texts)
+        return ptexts_, pconfs_, modified_text, hallucination
 
     def inference(self, question, demo, case):
         ptext = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
+        ptexts = []
+        pconfs = []
         docs = []
         pre_seq_conf = -1
         pre_seq = ''    # 如果前一轮句子的置信度高于这一轮句子，应该使用前一轮的句子
-        temp_conf = 0
-        temp_seq = ''
         old_len = -1
+        retr_num = 0
         while True:
             prompt = _get_answer_prompt_(docs, demo, question, ptext)
             # 当前轮次的新文本
@@ -1107,52 +1130,75 @@ class SeqConfidenceRAG(BasicRAG):
             if self.use_counter:
                 self.counter.add_generate(text, self.generator.tokenizer)
 
-            all_seqs, all_seqs_confs, modified_texts, hallucination = self.modifier(
+            ptexts_, pconfs_, modified_text, hallucination = self.modifier(
                 question,
                 ptext,
                 new_text,
                 docs=docs,
             )
-            docs = []
-            if hallucination:
-                forward_all = [question, ptext.strip(), modified_texts]
-                forward_all = " ".join(s for s in forward_all if len(s) > 0)
-                forward_all = forward_all.replace("[xxx].", "")
-                if self.query_formulation == "forward_all":
-                    retrieve_question = forward_all
-                else:
-                    raise NotImplemented
 
-                docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
-                docs = docs.tolist()
-                if self.use_counter == True:
-                    self.counter.hallucinated += 1
-
-            # 只保留高置信度的句子
-            for seq_conf, sent in zip(all_seqs_confs, all_seqs):
-                if sent in ptext:
-                    continue
-                if seq_conf >= self.reflection_threshold:
-                    ptext += sent + " "
-                    pre_seq_conf = -1      # 只要有新增，前一轮最接近高置信度的句子就被作废
-                    pre_seq = ''
-                else:
-                    temp_conf = seq_conf   # 当前最靠近高置信度的句子，若无新增则判比较当前句子与上一轮最接近高置信度句子
-                    temp_seq = sent
-                    break
-
-            if pre_seq_conf > temp_conf:
-                ptext += pre_seq + " "
-            elif pre_seq_conf == temp_conf:
-                ptext += temp_seq + " "
+            if not hallucination:
+                ptext += (' ' + (' '.join(ptexts_)))
+                pconfs.extend(pconfs_)
+                ptexts.extend(ptexts_)
             else:
-                pre_seq = temp_seq
-                pre_seq_conf = temp_conf
+                # 若模型新句子置信度均小于幻觉阈值，将当前轮次首句与上次最末尾幻觉句子置信度进行比较
+                if pconfs_[0] < self.hallucination_threshold:
+                    if ptext == '' and pre_seq_conf == -1:
+                        pre_seq = ptexts_[0]
+                        pre_seq_conf = pconfs_[0]
+                    else:
+                        if pre_seq_conf > pconfs_[0]:
+                            ptext += (' ' + pre_seq)
+                            pconfs.append(pre_seq_conf)
+                            ptexts.append(pre_seq)
+                        else:
+                            ptext += (' ' + ptexts_[0])
+                            pconfs.append(pconfs_[0])
+                            ptexts.append(ptexts_[0])
+                        pre_seq_conf = -1
+                        pre_seq = ''
+                else:
+                    ptext += (' ' + (' '.join(ptexts_[:-1])))
+                    pconfs.extend(pconfs_[:-1])
+                    ptexts.extend(ptexts_[:-1])
+                    pre_seq_conf = pconfs_[-1]
+                    pre_seq = ptexts_[-1]
 
+            ptext = ptext.strip()
             cur_len = len(self.generator.tokenizer.encode(ptext)) if ptext != "" else 0
 
-            if "the answer is" in ptext or cur_len >= self.max_length or cur_len <= old_len:
+            if "the answer is" in ptext or \
+                    cur_len >= self.max_length or \
+                    cur_len <= old_len or \
+                    retr_num >= self.max_retrieve:
+                if is_ans_unknown(ptexts[-1]):
+                    ptext = ' '.join(ptexts[:-1])
+                    docs = self._get_retr_docs_(question, ptext)
+                    prompt = _get_answer_prompt_(
+                        docs,
+                        demo,
+                        question,
+                        text = ' '.join(ptexts[:-1])
+                    )
+                    text, new_text, _, _ = self.generator.generate(
+                        prompt,
+                        max_length=self.generate_max_length,
+                        temperature=self.temperature,
+                        top_p=self.top_p,
+                        top_k=self.top_k,
+                        repetition_penalty=self.repetition_penalty,
+                        return_logprobs=False,
+                        gen_type='answer',
+                        process_gen_text=True,
+                    )
+                    ptext += (' ' + new_text)
                 break
-
             old_len = cur_len
+
+            if hallucination:
+                retr_num += 1
+                docs = self._get_retr_docs_(question, modified_text)
+                if self.use_counter == True:
+                    self.counter.hallucinated += 1
         return ptext

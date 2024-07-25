@@ -83,6 +83,13 @@ def process_reflect_text(raw_text, prompt):
     text = text.replace('\n', ' ')
     return text
 
+
+def is_ans_unknown(answer) -> bool:
+    # if re.search(r'(?i).*?\bunknown\b.*', answer):
+    #     return True
+    return False
+
+
 if __name__ == '__main__':
     text = "1 This is a test. 2. This is another test. 3.This is a third test.\n 4. This is a fourth test."
     # sents = split_sentences(text)
