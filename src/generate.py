@@ -1,3 +1,4 @@
+import random
 import re
 import numpy as np
 import logging
@@ -444,6 +445,14 @@ class FixLengthRAG(BasicRAG):
                 if len(sentences) == 0:
                     break
                 answer = sentences[0]
+            if self.method == "random-sentence-retrieval":
+                sentences = list(nlp(answer).sents)
+                sentences = [str(sent).strip() for sent in sentences]
+                if len(sentences) == 0:
+                    break
+                first_n = random.randint(1, len(sentences))
+                first_n_sents = sentences[:first_n]
+                answer = ' '.join(first_n_sents)
             ptext += (" " + answer.strip())
             ptext = ptext.strip()
             # 判断 token 的个数要少于 max_length

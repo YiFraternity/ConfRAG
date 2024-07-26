@@ -225,9 +225,10 @@ class StrategyQA(BaseDataset):
         answer_prompts = ["the answer is"]
         for prmt in answer_prompts:
             if prmt in pred:
-                beg = pred.find(prmt) + len(prmt) + 1
+                beg = pred.rfind(prmt) + len(prmt) + 1
                 pred = pred[beg:]
-                if pred[0:3].lower() == 'yes':
+                pred = pred.strip()
+                if 'yes' in pred[0:].lower():
                     return "yes"
                 else:
                     return "no"
@@ -319,7 +320,7 @@ class WikiMultiHopQA(BaseDataset):
 
     def get_real_prediction(self, pred):
         if "the answer is" in pred:
-            beg = pred.find("the answer is") + len("the answer is") + 1
+            beg = pred.rfind("the answer is") + len("the answer is") + 1
             pred = pred[beg:] # delete final "."
             if pred.endswith("</s>"):
                 pred = pred[:len(pred) - len("</s>")]
@@ -417,7 +418,7 @@ class HotpotQA(BaseDataset):
         answer_prompts = ["the answer is"]
         for prmt in answer_prompts:
             if prmt in pred:
-                beg = pred.find(prmt) + len(prmt) + 1
+                beg = pred.rfind(prmt) + len(prmt) + 1
                 pred = pred[beg:] # delete final "."
                 if pred.endswith("</s>"):
                     pred = pred[:len(pred) - len("</s>")]
@@ -570,7 +571,7 @@ class IIRC(BaseDataset):
         answer_prompts = ["the answer is"]
         for prmt in answer_prompts:
             if prmt in pred:
-                beg = pred.find(prmt) + len(prmt) + 1
+                beg = pred.rfind(prmt) + len(prmt) + 1
                 pred = pred[beg:] # delete final "."
                 for stop_word in ["</s>", "<|endoftext|>", "\n", "."]:
                     if pred.endswith(stop_word):

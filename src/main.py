@@ -78,7 +78,9 @@ def main():
         model = BasicRAG(args)
     elif args.method == "single-retrieval":
         model = SingleRAG(args)
-    elif args.method == "fix-length-retrieval" or args.method == "fix-sentence-retrieval":
+    elif args.method == "fix-length-retrieval" \
+            or args.method == "fix-sentence-retrieval" \
+            or args.method == "random-sentence-retrieval":
         model = FixLengthRAG(args)
     elif args.method == "token":
         model = TokenRAG(args)
