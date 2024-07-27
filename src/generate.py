@@ -377,7 +377,7 @@ class BasicRAG:
         sentences = [sent for sent in sentences if len(sent) > 0]
         return sentences[-1] if len(sentences) > 0 else ""
 
-    def inference(self, question, demo, case):
+    def inference(self, question, demo):
         # non-retrieval
         assert self.query_formulation == "direct"
         prompt = _get_answer_prompt_([], demo=demo, question=question, text="")
@@ -398,7 +398,7 @@ class SingleRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
-    def inference(self, question, demo, case):
+    def inference(self, question, demo):
         assert self.query_formulation == "direct"
         docs = self.retrieve(question, topk=self.retrieve_topk)
         # 对 topk 个 passage 生成 prompt
@@ -430,7 +430,7 @@ class FixLengthRAG(BasicRAG):
         docs = docs.tolist()
         return docs
 
-    def inference(self, question, demo, case):
+    def inference(self, question, demo):
         ptext = ""
         ptexts = []
         docs = []
@@ -555,7 +555,7 @@ class TokenRAG(BasicRAG):
         # No hallucination
         return text, None, False
 
-    def inference(self, question, demo, case):
+    def inference(self, question, demo):
         # assert self.query_formulation == "direct"
         ptext = ""
         old_len = -1
@@ -689,8 +689,8 @@ class EntityRAG(TokenRAG):
         # No hallucination
         return text, None, False
 
-    def inference(self, question, demo, case):
-        return super().inference(question, demo, case)
+    def inference(self, question, demo):
+        return super().inference(question, demo)
 
 
 class AttnWeightRAG(BasicRAG):
@@ -896,7 +896,7 @@ class AttnWeightRAG(BasicRAG):
         real_pairs = sorted(real_pairs, key = lambda x:x[2])
         return " ".join([x[1] for x in real_pairs])
 
-    def inference(self, question, demo, case):
+    def inference(self, question, demo):
         ptext = ""
         docs = []
         old_len = -1
@@ -1146,7 +1146,7 @@ class SeqConfidenceRAG(BasicRAG):
             pconfs_ = [-1]
         return ptexts_, pconfs_, modified_text, hallucination
 
-    def inference(self, question, demo, case):
+    def inference(self, question, demo):
         ptext = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
         ptexts = []
         pconfs = []
@@ -1244,4 +1244,82 @@ class SeqConfidenceRAG(BasicRAG):
                 docs = self._get_retr_docs_(question, modified_text)
                 if self.use_counter == True:
                     self.counter.hallucinated += 1
+        return ptext
+
+
+class SeqConfRetrAcceptRAG(SeqConfidenceRAG):
+    """
+    The difference between SeqConfidenceRAG and SeqConfidenceRAG is that,
+    the model directly accepts the retrieved content
+    """
+    def __init__(self, args):
+        super().__init__(args)
+
+    def _generate_(self, docs, demo, question, ptext):
+        prompt = _get_answer_prompt_(docs, demo, question, ptext)
+        # 当前轮次的新文本
+        text, new_text, _, _ = self.generator.generate(
+            prompt,
+            max_length=self.generate_max_length,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            repetition_penalty=self.repetition_penalty,
+            return_logprobs=False,
+            gen_type='answer',
+            process_gen_text=True,
+        )
+        if self.use_counter:
+            self.counter.add_generate(text, self.generator.tokenizer)
+        return text, new_text
+
+    def inference(self, question, demo):
+        ptext = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
+        ptexts = []
+        docs = []
+        old_len = -1
+        retr_num = 0
+        while True:
+            _, new_text = self._generate_(docs, demo, question, ptext)
+
+            ptexts_, _, modified_text, hallucination = self.modifier(
+                question,
+                ptext,
+                new_text,
+                docs=docs,
+            )
+
+            if not hallucination:
+                ptext += (' ' + (' '.join(ptexts_)))
+                ptexts.extend(ptexts_)
+            else:
+                # 直接接受
+                if self.use_counter == True:
+                    self.counter.hallucinated += 1
+                retr_num += 1
+                docs = self._get_retr_docs_(question, modified_text)
+
+                if len(ptexts) > 0:
+                    ptext += (' ' + (' '.join(ptexts_[:-1])))
+                    ptexts.extend(ptexts_[:-1])
+
+                _, new_text = self._generate_(docs, demo, question, ptext)
+                ptext += (' ' + new_text)
+                ptexts.append(new_text)
+
+            ptext = ptext.strip()
+            cur_len = len(self.generator.tokenizer.encode(ptext)) if ptext != "" else 0
+
+            if "the answer is" in ptext or \
+                    cur_len >= self.max_length or \
+                    cur_len <= old_len or \
+                    retr_num >= self.max_retrieve:
+                if len(ptexts)==0 or is_ans_unknown(ptexts[-1]):
+                    ptext = ' '.join(ptexts[:-1])
+                    docs = self._get_retr_docs_(question, ptext)
+                    _, new_text = self._generate_(docs, demo, question, ptext)
+                    ptext += (' ' + new_text)
+                    ptext = ptext.strip()
+                break
+            old_len = cur_len
         return ptext

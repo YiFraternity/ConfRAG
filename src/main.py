@@ -90,6 +90,8 @@ def main():
         model = AttnWeightRAG(args)
     elif args.method == "seq_confidence":
         model = SeqConfidenceRAG(args)
+    elif args.method == "seq_conf_retr_accept":
+        model = SeqConfRetrAcceptRAG(args)
     else:
         raise NotImplementedError
 
@@ -97,7 +99,7 @@ def main():
     for i in tqdm(range(len(data))):
         last_counter = copy(model.counter)
         batch = data[i]
-        pred = model.inference(batch["question"], batch["demo"], batch["case"])
+        pred = model.inference(batch["question"], batch["demo"])
         pred = pred.strip()
         ret = {
             "qid": batch["qid"],
@@ -106,17 +108,6 @@ def main():
         if args.use_counter:
             ret.update(model.counter.calc(last_counter))
         output_file.write(json.dumps(ret)+"\n")
-    # last_counter = copy(model.counter)
-    # batch = data[699]
-    # pred = model.inference(batch["question"], batch["demo"], batch["case"])
-    # pred = pred.strip()
-    # ret = {
-    #     "qid": batch["qid"],
-    #     "prediction": pred,
-    # }
-    # if args.use_counter:
-    #     ret.update(model.counter.calc(last_counter))
-    #     output_file.write(json.dumps(ret)+"\n")
 
 if __name__ == "__main__":
     main()
