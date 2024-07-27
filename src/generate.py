@@ -420,8 +420,19 @@ class FixLengthRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
+    def _get_retr_docs_(self, question, ptext):
+        if self.query_formulation == "forward_all":
+            tmp_all = [question, ptext]
+            retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
+        else:
+            retrieve_question = question
+        docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+        docs = docs.tolist()
+        return docs
+
     def inference(self, question, demo, case):
         ptext = ""
+        ptexts = []
         docs = []
         old_len = -1
         while True:
@@ -445,6 +456,7 @@ class FixLengthRAG(BasicRAG):
                 if len(sentences) == 0:
                     break
                 answer = sentences[0]
+                ptexts.append(answer)
             if self.method == "random-sentence-retrieval":
                 sentences = list(nlp(answer).sents)
                 sentences = [str(sent).strip() for sent in sentences]
@@ -453,20 +465,38 @@ class FixLengthRAG(BasicRAG):
                 first_n = random.randint(1, len(sentences))
                 first_n_sents = sentences[:first_n]
                 answer = ' '.join(first_n_sents)
+                ptexts.extend(first_n_sents)
             ptext += (" " + answer.strip())
             ptext = ptext.strip()
             # 判断 token 的个数要少于 max_length
             tokens_count = len(self.generator.tokenizer.encode(ptext))
             if tokens_count >= self.max_length or tokens_count <= old_len or "the answer is" in ptext:
+                if len(ptexts)==0 or is_ans_unknown(ptexts[-1]):
+                    ptext = ' '.join(ptexts[:-1])
+                    docs = self._get_retr_docs_(question, ptext)
+                    prompt = _get_answer_prompt_(
+                        docs,
+                        demo,
+                        question,
+                        text=ptext,
+                    )
+                    text, new_text, _, _ = self.generator.generate(
+                        prompt,
+                        max_length=self.max_length,
+                        temperature=self.temperature,
+                        top_p=self.top_p,
+                        top_k=self.top_k,
+                        repetition_penalty=self.repetition_penalty,
+                        return_logprobs=False,
+                        gen_type='answer',
+                        process_gen_text=True,
+                    )
+                    ptext += (' ' + new_text)
+                    ptext = ptext.strip()
                 break
             old_len = tokens_count
 
-            if self.query_formulation == "forward_all":
-                tmp_all = [question, ptext]
-                retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
-            else:
-                retrieve_question = question
-            docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+            docs = self._get_retr_docs_(question, answer)
         return text
 
 
@@ -575,7 +605,7 @@ class TokenRAG(BasicRAG):
                     self.counter.hallucinated += 1
                 ptext += (" " + new_text.strip())
             ptext = ptext.strip()
-            # 判断 token 的个数要少于 generate_max_length
+            # 判断 token 的个数要少于 max_length
             tokens_count = len(self.generator.tokenizer.encode(ptext))
             if tokens_count >= self.max_length or tokens_count <= old_len or "the answer is" in ptext:
                 break
