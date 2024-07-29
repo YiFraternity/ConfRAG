@@ -57,11 +57,12 @@ def _get_conf_prompt_(question, history_resp, response, docs):
     context = question + " " + history_resp
     doc_str = _get_docstr_(docs)
     if len(docs) > 0:
-        doc_str = (CONFIDENCE_USE_DOCS_PREFIX + '\n' + doc_str)
+        doc_str = ('\n' + doc_str + CONFIDENCE_USE_DOCS_SUFFIX)
     conf_prompt = CONFIDENCE_TEMPLATE.format(
         docs=doc_str,
         context=context,
         response=response,
+        use_docs = CONFIDENCE_USE_DOCS if len(docs) > 0 else '',
     )
     return conf_prompt
 
@@ -1028,6 +1029,7 @@ class SeqConfidenceRAG(BasicRAG):
             retrieve_question = forward_all
         else:
             raise NotImplemented
+        retrieve_question = retrieve_question.strip()
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         docs = docs.tolist()
         return docs
@@ -1133,10 +1135,10 @@ class SeqConfidenceRAG(BasicRAG):
 
         assert len(sentences) == len(confs_socres)
         ptexts_, pconfs_ = [], []
-        for seq_conf, sent in zip(confs_socres, sentences):
+        for seq_conf, modify_text, sent in zip(confs_socres, modified_texts, sentences):
             if sent in ptext:
                 continue
-            ptexts_.append(sent)
+            ptexts_.append(sent if modify_text == "[xxx]." else modify_text)
             pconfs_.append(seq_conf)
             if not seq_conf >= self.hallucination_threshold:
                 break
@@ -1191,6 +1193,8 @@ class SeqConfidenceRAG(BasicRAG):
                         pre_seq_conf = pconfs_[0]
                     else:
                         if pre_seq_conf > pconfs_[0]:
+                            import IPython
+                            IPython.embed()
                             ptext += (' ' + pre_seq)
                             pconfs.append(pre_seq_conf)
                             ptexts.append(pre_seq)
