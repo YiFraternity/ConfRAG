@@ -1185,6 +1185,8 @@ class SeqConfidenceRAG(BasicRAG):
                 ptext += (' ' + (' '.join(ptexts_)))
                 pconfs.extend(pconfs_)
                 ptexts.extend(ptexts_)
+                pre_seq = ''
+                pre_seq_conf = -1
             else:
                 # 若模型新句子置信度均小于幻觉阈值，将当前轮次首句与上次最末尾幻觉句子置信度进行比较
                 if pconfs_[0] < self.hallucination_threshold:
@@ -1193,8 +1195,6 @@ class SeqConfidenceRAG(BasicRAG):
                         pre_seq_conf = pconfs_[0]
                     else:
                         if pre_seq_conf > pconfs_[0]:
-                            import IPython
-                            IPython.embed()
                             ptext += (' ' + pre_seq)
                             pconfs.append(pre_seq_conf)
                             ptexts.append(pre_seq)
