@@ -989,8 +989,9 @@ class AttnWeightRAG(BasicRAG):
                 ptext += (" " + new_text.strip())
 
             # 判断 token 的个数要少于 generate_max_length
+            ptext = ptext.strip()
             tokens_count = len(self.generator.tokenizer.encode(ptext))
-            if tokens_count > self.generate_max_length or tokens_count <= old_len or "the answer is" in ptext:
+            if tokens_count >= self.max_length or tokens_count <= old_len or "the answer is" in ptext:
                 break
             old_len = tokens_count
         return ptext
