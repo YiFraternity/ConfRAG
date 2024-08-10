@@ -1183,7 +1183,7 @@ class SeqConfidenceRAG(BasicRAG):
                 ptext,
                 new_text,
                 docs=docs,
-                replace=self.replace,
+                replace=self.replace if "replace" in self.__dict__ else False,
             )
 
             if not hallucination:
