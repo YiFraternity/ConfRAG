@@ -39,7 +39,7 @@ def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
     doc_str = _get_docstr_(docs)
     if len(demo) > 0:
         examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
-        examples += '\n'
+        examples += ('-'*50 + '\n')
     else:
         examples = ""
     prompt = ANSWER_QUESTION_TEMPLETE.format(
@@ -48,12 +48,13 @@ def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
         question=question,
         use_docs=(ANSWER_USE_DOCS_TEMPLATE if len(docs) > 0 else ANSWER_NOT_USE_DOCS_TEMPLATE) + ' ',
         use_demo=ANSWER_USE_DEMO_TEMPLATE if len(demo) > 0 else ANSWER_NOT_USE_DEMO_TEMPLATE,
+        use_continue=CONTINUE_ANSWER_TEMPLATE if len(text) > 0 else NOT_CONTINUE_ANSWER_TEMPLATE,
         gen_text=text,
     )
     return prompt
 
 
-def _get_conf_prompt_(question, history_resp, response, docs):
+def _get_conf_prompt_(question:str, history_resp:str, response:str, docs:list):
     context = question + " " + history_resp
     doc_str = _get_docstr_(docs)
     if len(docs) > 0:
@@ -999,7 +1000,7 @@ class SeqConfidenceRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
-    def _get_seq_confs_(self, question, history_resp, response, docs):
+    def _get_seq_confs_(self, question:str, history_resp:str, response:str, docs:list):
         conf_prompt = _get_conf_prompt_(
             question=question,
             history_resp=history_resp,
@@ -1020,6 +1021,24 @@ class SeqConfidenceRAG(BasicRAG):
         if self.use_counter:
             self.counter.add_generate(text, self.generator.tokenizer)
         return confs
+
+    def _generate_(self, docs, demo, question, ptext, generate_length=-1):
+        prompt = _get_answer_prompt_(docs, demo, question, ptext)
+        # 当前轮次的新文本
+        text, new_text, _, _ = self.generator.generate(
+            prompt,
+            max_length=self.generate_max_length if generate_length==-1 else generate_length,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            repetition_penalty=self.repetition_penalty,
+            return_logprobs=False,
+            gen_type='answer',
+            process_gen_text=True,
+        )
+        if self.use_counter:
+            self.counter.add_generate(text, self.generator.tokenizer)
+        return text, new_text
 
     def _get_retr_docs_(self, question, addition_info):
         forward_all = [question, addition_info]
@@ -1093,7 +1112,7 @@ class SeqConfidenceRAG(BasicRAG):
             self.counter.add_generate(text, self.generator.tokenizer)
         return reflect
 
-    def modifier(self, question, ptext, text, docs):
+    def modifier(self, question, ptext, text, docs, replace=True):
         """
         按模型对新生成的内容判断自信度进行修改。删除置信度不高的文本
 
@@ -1127,7 +1146,7 @@ class SeqConfidenceRAG(BasicRAG):
             elif confs < self.hallucination_threshold:
                 print(f'cur confs:{confs}, performed hullucination')
                 hallucination = True
-                modify_text = "[xxx]."
+                modify_text = "[xxx]." if replace else sent
                 reflect_tag = False
 
             modified_texts.append(modify_text)
@@ -1153,63 +1172,47 @@ class SeqConfidenceRAG(BasicRAG):
         ptexts = []
         pconfs = []
         docs = []
-        pre_seq_conf = -1
-        pre_seq = ''    # 如果前一轮句子的置信度高于这一轮句子，应该使用前一轮的句子
         old_len = -1
         retr_num = 0
         while True:
-            prompt = _get_answer_prompt_(docs, demo, question, ptext)
-            # 当前轮次的新文本
-            text, new_text, _, _ = self.generator.generate(
-                prompt,
-                max_length=self.generate_max_length,
-                temperature=self.temperature,
-                top_p=self.top_p,
-                top_k=self.top_k,
-                repetition_penalty=self.repetition_penalty,
-                return_logprobs=False,
-                gen_type='answer',
-                process_gen_text=True,
-            )
-            if self.use_counter:
-                self.counter.add_generate(text, self.generator.tokenizer)
+            _, new_text = self._generate_(docs, demo, question, ptext)
 
             ptexts_, pconfs_, modified_text, hallucination = self.modifier(
                 question,
                 ptext,
                 new_text,
                 docs=docs,
+                replace=self.replace,
             )
 
             if not hallucination:
                 ptext += (' ' + (' '.join(ptexts_)))
                 pconfs.extend(pconfs_)
                 ptexts.extend(ptexts_)
-                pre_seq = ''
-                pre_seq_conf = -1
             else:
-                # 若模型新句子置信度均小于幻觉阈值，将当前轮次首句与上次最末尾幻觉句子置信度进行比较
-                if pconfs_[0] < self.hallucination_threshold:
-                    if ptext == '' and pre_seq_conf == -1:
-                        pre_seq = ptexts_[0]
-                        pre_seq_conf = pconfs_[0]
-                    else:
-                        if pre_seq_conf > pconfs_[0]:
-                            ptext += (' ' + pre_seq)
-                            pconfs.append(pre_seq_conf)
-                            ptexts.append(pre_seq)
-                        else:
-                            ptext += (' ' + ptexts_[0])
-                            pconfs.append(pconfs_[0])
-                            ptexts.append(ptexts_[0])
-                        pre_seq_conf = -1
-                        pre_seq = ''
-                else:
-                    ptext += (' ' + (' '.join(ptexts_[:-1])))
+                if len(ptexts_) > 0:
                     pconfs.extend(pconfs_[:-1])
                     ptexts.extend(ptexts_[:-1])
                     pre_seq_conf = pconfs_[-1]
                     pre_seq = ptexts_[-1]
+                else:
+                    pre_seq_conf = -1
+                    pre_seq = ""
+                retr_num += 1
+                _docs_ = self._get_retr_docs_(question, modified_text)
+                _, new_text = self._generate_(_docs_, demo, question, ptext)
+                first_text = split_sentences(new_text)[0]
+                cur_conf = self._get_seq_confs_(question, ptext, first_text, _docs_)
+                # 判断经过检索后新生成的句子是否置信度更高
+                if cur_conf > pre_seq_conf:
+                    ptext += (' ' + first_text)
+                    ptexts.append(first_text)
+                    pconfs.append(cur_conf)
+                    docs = _docs_
+                else:
+                    ptext += (' ' + pre_seq)
+                    ptexts.append(pre_seq)
+                    pconfs.append(pre_seq_conf)
 
             ptext = ptext.strip()
             cur_len = len(self.generator.tokenizer.encode(ptext)) if ptext != "" else 0
@@ -1218,36 +1221,18 @@ class SeqConfidenceRAG(BasicRAG):
                     cur_len >= self.max_length or \
                     cur_len <= old_len or \
                     retr_num >= self.max_retrieve:
-                if len(ptexts)==0 or is_ans_unknown(ptexts[-1]):
-                    ptext = ' '.join(ptexts[:-1])
-                    docs = self._get_retr_docs_(question, ptext)
-                    prompt = _get_answer_prompt_(
-                        docs,
-                        demo,
-                        question,
-                        text=ptext,
-                    )
-                    text, new_text, _, _ = self.generator.generate(
-                        prompt,
-                        max_length=self.max_length,
-                        temperature=self.temperature,
-                        top_p=self.top_p,
-                        top_k=self.top_k,
-                        repetition_penalty=self.repetition_penalty,
-                        return_logprobs=False,
-                        gen_type='answer',
-                        process_gen_text=True,
-                    )
+                idx, unknown = is_ans_unknown(ptexts)
+                if len(ptexts)==0 or unknown:
+                    ptext = ' '.join(ptexts[:idx])
+                    unknown_info = ptexts[idx] if idx and idx >= 0 else ptext
+                    unknown_info = unknown_info.strip() if unknown_info else ""
+                    docs = self._get_retr_docs_(question, unknown_info)
+                    _, new_text = self._generate_(docs, demo, question, ptext, generate_length=self.max_length)
                     ptext += (' ' + new_text)
                     ptext = ptext.strip()
                 break
             old_len = cur_len
 
-            if hallucination:
-                retr_num += 1
-                docs = self._get_retr_docs_(question, modified_text)
-                if self.use_counter == True:
-                    self.counter.hallucinated += 1
         return ptext
 
 
@@ -1258,24 +1243,6 @@ class SeqConfRetrAcceptRAG(SeqConfidenceRAG):
     """
     def __init__(self, args):
         super().__init__(args)
-
-    def _generate_(self, docs, demo, question, ptext):
-        prompt = _get_answer_prompt_(docs, demo, question, ptext)
-        # 当前轮次的新文本
-        text, new_text, _, _ = self.generator.generate(
-            prompt,
-            max_length=self.generate_max_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            repetition_penalty=self.repetition_penalty,
-            return_logprobs=False,
-            gen_type='answer',
-            process_gen_text=True,
-        )
-        if self.use_counter:
-            self.counter.add_generate(text, self.generator.tokenizer)
-        return text, new_text
 
     def inference(self, question, demo):
         ptext = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
@@ -1318,10 +1285,13 @@ class SeqConfRetrAcceptRAG(SeqConfidenceRAG):
                     cur_len >= self.max_length or \
                     cur_len <= old_len or \
                     retr_num >= self.max_retrieve:
-                if len(ptexts)==0 or is_ans_unknown(ptexts[-1]):
-                    ptext = ' '.join(ptexts[:-1])
-                    docs = self._get_retr_docs_(question, ptext)
-                    _, new_text = self._generate_(docs, demo, question, ptext)
+                idx, unknown = is_ans_unknown(ptexts)
+                if len(ptexts)==0 or unknown:
+                    ptext = ' '.join(ptexts[:idx])
+                    unknown_info = ptexts[idx] if idx and idx >= 0 else ptext
+                    unknown_info = unknown_info.strip() if unknown_info else ""
+                    docs = self._get_retr_docs_(question, unknown_info)
+                    _, new_text = self._generate_(docs, demo, question, ptext, generate_length=self.max_length)
                     ptext += (' ' + new_text)
                     ptext = ptext.strip()
                 break

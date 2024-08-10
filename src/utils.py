@@ -1,11 +1,12 @@
 import re
+from typing import List
 import spacy
 nlp = spacy.load("en_core_web_sm")
 
 ANSWER_NEW_TOKEN_NUM = 2048
 
 
-def split_sentences(text):
+def split_sentences(text: str) -> List[str]:
     sentences = [sent.text.strip() for sent in nlp(text).sents]
     sentences = [sent for sent in sentences if len(sent) > 0]
     results = []
@@ -84,7 +85,7 @@ def process_reflect_text(raw_text, prompt):
     return text
 
 
-def is_ans_unknown(answer) -> bool:
+def is_ans_unknown(answers: List[str]) -> bool:
     unknown_values = [
         "not provided",
         "cannot definitively",
@@ -111,13 +112,20 @@ def is_ans_unknown(answer) -> bool:
         "not known",
         "not stated",
         "not directly",
+        "not sufficient data",
+        "not sufficient information",
+        "isn't sufficient",
+        "isn't enough",
+        "does not",
+        "not specify",
     ]
-    if any(re.search(r'(?i).*?\b{}\b.*'.format(value), answer) for value in unknown_values):
-        return True
+    for idx, answer in enumerate(answers):
+        if any(re.search(r'(?i).*?\b{}\b.*'.format(value), answer) for value in unknown_values):
+            return idx, True
     pattern = r'(?i)the answer is[：:]?$'
     if re.search(pattern, answer):
-        return True
-    return False
+        return -1, True
+    return None, False
 
 
 if __name__ == '__main__':
