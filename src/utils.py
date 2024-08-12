@@ -85,6 +85,20 @@ def process_reflect_text(raw_text, prompt):
     return text
 
 
+def process_keywords_text(raw_text, prompt):
+    text = raw_text
+    ptns_choice = [
+        r'(?i).*?\bkeywords\s*[:：]\s*',
+        r'(?i).*?\bmy keywords are',
+        r'(?i).*?\ba keywords are',
+    ]
+    for ptns in ptns_choice:
+        pattern = re.compile(ptns, re.DOTALL)
+        text = re.sub(pattern, '', text)
+    text = text.replace('\n', ' ')
+    return text
+
+
 def is_ans_unknown(answers: List[str]) -> bool:
     unknown_values = [
         "not provided",

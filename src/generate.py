@@ -15,6 +15,7 @@ from utils import (
     process_confidence_text,
     process_advice_text,
     process_reflect_text,
+    process_keywords_text,
     split_sentences,
     is_ans_unknown,
 )
@@ -39,7 +40,7 @@ def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
     doc_str = _get_docstr_(docs)
     if len(demo) > 0:
         examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
-        examples += ('-'*50 + '\n')
+        examples += ('-'*50 + '\n\n')
     else:
         examples = ""
     prompt = ANSWER_QUESTION_TEMPLETE.format(
@@ -112,6 +113,10 @@ class BasicGenerator:
             gen_type="answer",
             process_gen_text=False,
         ):
+        """
+        Args:
+            gen_type (str): [`answer`, `confidence`, `advice`, `reflection`, `keywords`]
+        """
         if self.model_config.model_type in ["llama", "qwen2"]:
             input_text = self._apply_chat_template_(input_text)
         input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
@@ -128,6 +133,8 @@ class BasicGenerator:
             process_text = process_advice_text
         elif gen_type == 'reflection':
             process_text = process_reflect_text
+        elif gen_type == 'keywords':
+            process_text = process_keywords_text
         else:
             raise ValueError(f"gen_type {gen_type} is not supported")
 
@@ -364,7 +371,9 @@ class BasicRAG:
                 recall_num = 100,
                 topk = topk,
             )
-            return docs[0]
+            separator = np.array([[' | '] * len(docs[0])])
+            result = np.char.add(np.char.add(_doc_titles, separator), docs)
+            return result
         else:
             raise NotImplementedError
 
@@ -1041,7 +1050,22 @@ class SeqConfidenceRAG(BasicRAG):
             self.counter.add_generate(text, self.generator.tokenizer)
         return text, new_text
 
-    def _get_retr_docs_(self, question, addition_info):
+    def _get_keywords_(self, addition_info):
+        if addition_info == "":
+            return ""
+        keyword_prompt = KEYWORDS_TEMPLATE.format(sentence=addition_info)
+        _, keywords, _, _ = self.generator.generate(
+            keyword_prompt,
+            max_length=10,
+            gen_type='keywords',
+            process_gen_text=True,
+        )
+        return keywords
+
+    def _get_retr_docs_(self, question, addition_info, use_keywords=True):
+        if use_keywords:
+            keywords = self._get_keywords_(addition_info)
+            addition_info = keywords
         forward_all = [question, addition_info]
         forward_all = " ".join(s for s in forward_all if len(s) > 0)
         forward_all = forward_all.replace("[xxx].", "")
@@ -1183,7 +1207,7 @@ class SeqConfidenceRAG(BasicRAG):
                 ptext,
                 new_text,
                 docs=docs,
-                replace=self.replace if "replace" in self.__dict__ else False,
+                replace=self.replace if "replace" in self.__dict__ else True,
             )
 
             if not hallucination:
@@ -1200,14 +1224,14 @@ class SeqConfidenceRAG(BasicRAG):
                     pre_seq_conf = -1
                     pre_seq = ""
                 retr_num += 1
+                modified_text = modified_text.replace("[xxx].", "")
                 _docs_ = self._get_retr_docs_(question, modified_text)
                 _, new_text = self._generate_(_docs_, demo, question, ptext)
-                first_text = split_sentences(new_text)[0]
-                cur_conf = self._get_seq_confs_(question, ptext, first_text, _docs_)
+                cur_conf = self._get_seq_confs_(question, ptext, new_text, _docs_)
                 # 判断经过检索后新生成的句子是否置信度更高
-                if cur_conf > pre_seq_conf:
-                    ptext += (' ' + first_text)
-                    ptexts.append(first_text)
+                if cur_conf >= pre_seq_conf:
+                    ptext += (' ' + new_text)
+                    ptexts.append(new_text)
                     pconfs.append(cur_conf)
                     docs = _docs_
                 else:
@@ -1224,9 +1248,10 @@ class SeqConfidenceRAG(BasicRAG):
                     retr_num >= self.max_retrieve:
                 idx, unknown = is_ans_unknown(ptexts)
                 if len(ptexts)==0 or unknown:
-                    ptext = ' '.join(ptexts[:idx])
+                    # ptext = ' '.join(ptexts[:idx])
+                    ptext = ''
                     unknown_info = ptexts[idx] if idx and idx >= 0 else ptext
-                    unknown_info = unknown_info.strip() if unknown_info else ""
+                    unknown_info = unknown_info.strip() if len(unknown_info)>0 else ""
                     docs = self._get_retr_docs_(question, unknown_info)
                     _, new_text = self._generate_(docs, demo, question, ptext, generate_length=self.max_length)
                     ptext += (' ' + new_text)
