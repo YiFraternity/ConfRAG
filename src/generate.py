@@ -968,6 +968,8 @@ class AttnWeightRAG(BasicRAG):
 
                 elif self.query_formulation == "last_sentence":
                     retrieve_question = self.get_last_sentence(forward_all)
+                    if len(retrieve_question) == 0:
+                        retrieve_question = question
 
                 elif self.query_formulation == "last_n_tokens":
                     assert "retrieve_keep_top_k" in self.__dict__
@@ -1245,7 +1247,10 @@ class SeqConfidenceRAG(BasicRAG):
                     }
                 _docs_ = self._get_retr_docs_(question, **add_dict)
                 _, new_text = self._generate_(_docs_, demo, question, ptext)
-                cur_conf = self._get_seq_confs_(question, ptext, new_text, _docs_)
+                if 'retr_accpt' in self.__dict__ and self.retr_accpt:
+                    cur_conf = 1.0
+                else:
+                    cur_conf = self._get_seq_confs_(question, ptext, new_text, _docs_)
                 # 判断经过检索后新生成的句子是否置信度更高
                 if cur_conf >= pre_seq_conf:
                     ptext += (' ' + new_text)
@@ -1277,67 +1282,4 @@ class SeqConfidenceRAG(BasicRAG):
                 break
             old_len = cur_len
 
-        return ptext
-
-
-class SeqConfRetrAcceptRAG(SeqConfidenceRAG):
-    """
-    The difference between SeqConfidenceRAG and SeqConfidenceRAG is that,
-    the model directly accepts the retrieved content
-    """
-    def __init__(self, args):
-        super().__init__(args)
-
-    def inference(self, question, demo):
-        ptext = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
-        ptexts = []
-        docs = []
-        old_len = -1
-        retr_num = 0
-        while True:
-            _, new_text = self._generate_(docs, demo, question, ptext)
-
-            ptexts_, _, modified_text, hallucination = self.modifier(
-                question,
-                ptext,
-                new_text,
-                docs=docs,
-            )
-
-            if not hallucination:
-                ptext += (' ' + (' '.join(ptexts_)))
-                ptexts.extend(ptexts_)
-            else:
-                # 直接接受
-                if self.use_counter == True:
-                    self.counter.hallucinated += 1
-                retr_num += 1
-                docs = self._get_retr_docs_(question, modified_text)
-
-                if len(ptexts) > 0:
-                    ptext += (' ' + (' '.join(ptexts_[:-1])))
-                    ptexts.extend(ptexts_[:-1])
-
-                _, new_text = self._generate_(docs, demo, question, ptext)
-                ptext += (' ' + new_text)
-                ptexts.append(new_text)
-
-            ptext = ptext.strip()
-            cur_len = len(self.generator.tokenizer.encode(ptext)) if ptext != "" else 0
-
-            if "the answer is" in ptext or \
-                    cur_len >= self.max_length or \
-                    cur_len <= old_len or \
-                    retr_num >= self.max_retrieve:
-                idx, unknown = is_ans_unknown(ptexts)
-                if len(ptexts)==0 or unknown:
-                    ptext = ' '.join(ptexts[:idx])
-                    unknown_info = ptexts[idx] if idx and idx >= 0 else ptext
-                    unknown_info = unknown_info.strip() if unknown_info else ""
-                    docs = self._get_retr_docs_(question, unknown_info)
-                    _, new_text = self._generate_(docs, demo, question, ptext, generate_length=self.max_length)
-                    ptext += (' ' + new_text)
-                    ptext = ptext.strip()
-                break
-            old_len = cur_len
         return ptext
