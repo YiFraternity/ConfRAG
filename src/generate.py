@@ -435,6 +435,8 @@ class FixLengthRAG(BasicRAG):
         if self.query_formulation == "forward_all":
             tmp_all = [question, ptext]
             retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
+        elif self.query_formulation == "last_sentence":
+            retrieve_question = self.get_last_sentence(ptext if len(ptext) > 0 else question)
         else:
             retrieve_question = question
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
@@ -484,6 +486,7 @@ class FixLengthRAG(BasicRAG):
             if tokens_count >= self.max_length or tokens_count <= old_len or "the answer is" in ptext:
                 if len(ptexts)==0 or is_ans_unknown(ptexts[-1]):
                     ptext = ' '.join(ptexts[:-1])
+                    ptext = ptext.strip()
                     docs = self._get_retr_docs_(question, ptext)
                     prompt = _get_answer_prompt_(
                         docs,
@@ -507,7 +510,7 @@ class FixLengthRAG(BasicRAG):
                 break
             old_len = tokens_count
 
-            docs = self._get_retr_docs_(question, answer)
+            docs = self._get_retr_docs_(question, ptext)
         return text
 
 
@@ -594,6 +597,10 @@ class TokenRAG(BasicRAG):
                 elif self.query_formulation == "forward_all":
                     tmp_all = [question, ptext_, curr]
                     retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
+                elif self.query_formulation == "last_sentence":
+                    ptext = ptext.strip()
+                    txt = ptext if len(ptext) > 0 else question
+                    retrieve_question = self.get_last_sentence(txt)
                 else:
                     raise NotImplemented
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
@@ -1071,6 +1078,8 @@ class SeqConfidenceRAG(BasicRAG):
         forward_all = forward_all.replace("[xxx].", "")
         if self.query_formulation == "forward_all":
             retrieve_question = forward_all
+        elif self.query_formulation == "last_sentence":
+            retrieve_question = self.get_last_sentence(forward_all)
         else:
             raise NotImplemented
         retrieve_question = retrieve_question.strip()
@@ -1224,8 +1233,17 @@ class SeqConfidenceRAG(BasicRAG):
                     pre_seq_conf = -1
                     pre_seq = ""
                 retr_num += 1
-                modified_text = modified_text.replace("[xxx].", "")
-                _docs_ = self._get_retr_docs_(question, modified_text)
+                if self.query_formulation == "last_sentence":
+                    add_dict = {
+                        'addition_info': ptext,
+                        'use_keywords': False,
+                    }
+                else:
+                    add_dict = {
+                        'addition_info': modified_text,
+                        'use_keywords': True,
+                    }
+                _docs_ = self._get_retr_docs_(question, **add_dict)
                 _, new_text = self._generate_(_docs_, demo, question, ptext)
                 cur_conf = self._get_seq_confs_(question, ptext, new_text, _docs_)
                 # 判断经过检索后新生成的句子是否置信度更高
