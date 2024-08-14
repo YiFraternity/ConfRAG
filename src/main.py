@@ -90,8 +90,6 @@ def main():
         model = AttnWeightRAG(args)
     elif args.method == "seq_confidence":
         model = SeqConfidenceRAG(args)
-    elif args.method == "seq_conf_retr_accept":
-        model = SeqConfRetrAcceptRAG(args)
     else:
         raise NotImplementedError
 
