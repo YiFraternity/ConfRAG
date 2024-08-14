@@ -1091,7 +1091,7 @@ class SeqConfidenceRAG(BasicRAG):
             raise NotImplemented
         retrieve_question = retrieve_question.strip()
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
-        docs = docs.tolist()
+        docs = docs.tolist()[0]
         return docs
 
     def _reflection_(self, question, history_resp, response, docs=[]):
