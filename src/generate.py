@@ -91,7 +91,7 @@ class BasicGenerator:
 
     def _apply_chat_template_(self, prompt, add_generation_prompt=True):
         message = [
-            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "system", "content": "You are a concise assistant, please do not repeat the content of the Answer"},
             {"role": "user", "content": prompt}
         ]
         text = self.tokenizer.apply_chat_template(
@@ -436,7 +436,12 @@ class FixLengthRAG(BasicRAG):
             tmp_all = [question, ptext]
             retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
         elif self.query_formulation == "last_sentence":
-            retrieve_question = self.get_last_sentence(ptext if len(ptext) > 0 else question)
+            tmp_all = [question, ptext]
+            retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
+            retrieve_question = retrieve_question.strip()
+            retrieve_question = self.get_last_sentence(retrieve_question)
+            if len(retrieve_question) == 0:
+                retrieve_question = question
         else:
             retrieve_question = question
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
@@ -1110,7 +1115,7 @@ class SeqConfidenceRAG(BasicRAG):
         advice_prompt = ADVICE_TEMPLATE.format(**tutor_data)
         text, advice, _, _ = self.generator.generate(
             advice_prompt,
-            max_length=self.generate_max_length,
+            max_length=self.max_length,
             temperature=self.temperature,
             top_p=self.top_p,
             top_k=self.top_k,
@@ -1135,7 +1140,7 @@ class SeqConfidenceRAG(BasicRAG):
         reflect_prompt = REFLECTION_TEMPLATE.format(**reft_prompt)
         text, reflect, _, _ = self.generator.generate(
             reflect_prompt,
-            max_length=self.generate_max_length,
+            max_length=self.max_length,
             temperature=self.temperature,
             top_p=self.top_p,
             top_k=self.top_k,
@@ -1229,6 +1234,8 @@ class SeqConfidenceRAG(BasicRAG):
                 if len(ptexts_) > 0:
                     pconfs.extend(pconfs_[:-1])
                     ptexts.extend(ptexts_[:-1])
+                    ptext += (' ' + (' '.join(ptexts_[:-1])))
+                    ptext = ptext.strip()
                     pre_seq_conf = pconfs_[-1]
                     pre_seq = ptexts_[-1]
                 else:
@@ -1271,8 +1278,8 @@ class SeqConfidenceRAG(BasicRAG):
                     retr_num >= self.max_retrieve:
                 idx, unknown = is_ans_unknown(ptexts)
                 if len(ptexts)==0 or unknown:
-                    # ptext = ' '.join(ptexts[:idx])
-                    ptext = ''
+                    ptext = ' '.join(ptexts[:idx])
+                    # ptext = ''
                     unknown_info = ptexts[idx] if idx and idx >= 0 else ptext
                     unknown_info = unknown_info.strip() if len(unknown_info)>0 else ""
                     docs = self._get_retr_docs_(question, unknown_info)

@@ -7,10 +7,12 @@ ANSWER_NOT_USE_DOCS_TEMPLATE = """Please answer the question by reasoning step-b
 ANSWER_USE_DEMO_TEMPLATE = """And I hope you can answer the question in the same format as the examples"""
 ANSWER_NOT_USE_DEMO_TEMPLATE = """And I expect you to provide answers in a format consistent with the question and to only provide the answer without including the question. Additionally, please prefix each answer with "So, the answer is"."""
 
-CONTINUE_ANSWER_TEMPLATE = """. If more detail is needed, continue reasoning without deviating from the question, and aim to conclude promptly once the answer is fully developed. What's more, if the answer is complete, conclude with "So, the answer is," indicating a definitive response. """
-NOT_CONTINUE_ANSWER_TEMPLATE = """, (i.e, ending with 'So, the answer is')."""
+CONTINUE_ANSWER_TEMPLATE = """. If more detail is needed, continue reasoning follewed Anaswer and without deviating from the question, and aim to conclude promptly once the answer is fully developed. What's more, if the answer is complete, conclude with "So, the answer is" indicating a definitive response. And Please do not provide anything unrelated to reasoning, such as such as "Let's me help.", "Let's analyze the information provided", "I'd be delighted to assist!" and so on. And please proceed with reasoning based on the provided Answer and do not repeat the content of the Answer. \n"""
+
+NOT_CONTINUE_ANSWER_TEMPLATE = """, (i.e, ending with "So, the answer is"). And Please do not provide anything unrelated to reasoning, such as "Let's me help.", "Let's analyze the information provided", "I'd be delighted to assist!" and so on."""
+
 CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.' I believe you have true knowledge, and I will provide you with "Context" and "Your response" which you generated base on the "Context". {docs}
-Please provide your score of confidence in "Your response" to demonstrate your familiarity with the relevant knowledge. Please note that the confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the "Your Response". {use_docs}
+Please provide your score of confidence in "Your response" to demonstrate your familiarity with the relevant knowledge. Please note that the confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the "Your Response". Please provide confidence first, and then provide an explanation. {use_docs}
 
 Context:
 {context}
