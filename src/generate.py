@@ -1189,9 +1189,15 @@ class SeqConfidenceRAG(BasicRAG):
             confs = self._get_seq_confs_value_(question, history_resp, sent, docs)
         else:
             confs = self._get_seq_confs_level_(question, history_resp, sent, docs)
-        if (confs_class == 'value' and confs >= self.conf_threshold) or (confs_class == 'level' and 'high' in confs.lower()):
+        if self.reflection_threshold < 0:  # no reflect
+            if (confs_class == 'value' and confs >= self.hallucination_threshold) or (confs_class == 'level' and 'low' not in confs.lower()):
+                return 1
+            else:
+                return -1
+
+        if (confs_class == 'value' and confs >= self.reflection_threshold) or (confs_class == 'level' and 'high' in confs.lower()):
             return 1
-        elif (confs_class == 'value' and confs < self.hullucination_threshold) or (confs_class == 'level' and 'low' in confs.lower()):
+        elif (confs_class == 'value' and confs < self.hallucination_threshold) or (confs_class == 'level' and 'low' in confs.lower()):
             return -1
         else:
             return 0
@@ -1219,7 +1225,7 @@ class SeqConfidenceRAG(BasicRAG):
             if i > 0:
                 history_resp += (' ' + sentences[i-1])
             confs = self._get_confs_class_(question, history_resp, sent, docs, confs_class)
-            if 1 == confs and reflect_tag:
+            if 0 == confs and reflect_tag:
                 # 根据置信度进行幻觉判断，如果需要反思，则调用self._reflection生成反思后的文本，之后再对生成的新文本进行置信度的判断，如果置信度比之前的文本高则进行置信度的替换
                 # 若置信度过低，则将该句子mask掉
                 print(f'cur confs:{confs}, performed reflect')
@@ -1228,7 +1234,7 @@ class SeqConfidenceRAG(BasicRAG):
                 if reft_cons >= 0:
                     modify_text = reft_text
                     confs = reft_cons
-            elif -1 == confs:
+            elif confs < 0:
                 print(f'cur confs:{confs}, performed hullucination')
                 hallucination = True
                 modify_text = "[xxx]." if replace else sent
