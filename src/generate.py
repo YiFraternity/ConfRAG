@@ -68,6 +68,19 @@ def _get_conf_prompt_(question:str, history_resp:str, response:str, docs:list):
     )
     return conf_prompt
 
+def _get_confs_class_prompt_(question:str, history_resp:str, response:str, docs:list):
+    context = question + " " + history_resp
+    doc_str = _get_docstr_(docs)
+    if len(docs) > 0:
+        doc_str = ('\n' + doc_str + CONFIDENCE_USE_DOCS_SUFFIX)
+    conf_prompt = CONFIDENCE_CLASS_TEMPLATE.format(
+        docs=doc_str,
+        context=context,
+        response=response,
+        use_docs = CONFIDENCE_USE_DOCS if len(docs) > 0 else '',
+    )
+    return conf_prompt
+
 class BasicGenerator:
     def __init__(self, model_name_or_path):
         logger.info(f"Loading model from {model_name_or_path}")
@@ -88,7 +101,6 @@ class BasicGenerator:
 
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
-
     def _apply_chat_template_(self, prompt, add_generation_prompt=True):
         message = [
             {"role": "system", "content": "You are a concise assistant, please do not repeat the content of the Answer"},
@@ -1024,7 +1036,7 @@ class SeqConfidenceRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
-    def _get_seq_confs_(self, question:str, history_resp:str, response:str, docs:list):
+    def _get_seq_confs_value_(self, question:str, history_resp:str, response:str, docs:list):
         conf_prompt = _get_conf_prompt_(
             question=question,
             history_resp=history_resp,
@@ -1045,6 +1057,25 @@ class SeqConfidenceRAG(BasicRAG):
         if self.use_counter:
             self.counter.add_generate(text, self.generator.tokenizer)
         return confs
+
+    def _get_seq_confs_level_(self, question:str, history_resp:str, response:str, docs:list):
+        conf_prompt = _get_confs_class_prompt_(
+            question=question,
+            history_resp=history_resp,
+            response=response,
+            docs=docs
+        )
+        text, confs, _, _ = self.generator.generate(
+            conf_prompt,
+            max_length=self.generate_confidence_length,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            process_gen_text=False,
+        )
+        if self.use_counter:
+            self.counter.add_generate(text, self.generator.tokenizer)
+        return text
 
     def _generate_(self, docs, demo, question, ptext, generate_length=-1):
         prompt = _get_answer_prompt_(docs, demo, question, ptext)
@@ -1153,11 +1184,24 @@ class SeqConfidenceRAG(BasicRAG):
             self.counter.add_generate(text, self.generator.tokenizer)
         return reflect
 
-    def modifier(self, question, ptext, text, docs, replace=True):
+    def _get_confs_class_(self, question, history_resp, sent, docs, confs_class='value'):
+        if confs_class == 'value':
+            confs = self._get_seq_confs_value_(question, history_resp, sent, docs)
+        else:
+            confs = self._get_seq_confs_level_(question, history_resp, sent, docs)
+        if (confs_class == 'value' and confs >= self.conf_threshold) or (confs_class == 'level' and 'high' in confs.lower()):
+            return 1
+        elif (confs_class == 'value' and confs < self.hullucination_threshold) or (confs_class == 'level' and 'low' in confs.lower()):
+            return -1
+        else:
+            return 0
+
+    def modifier(self, question, ptext, text, docs, replace=True, confs_class='value'):
         """
         按模型对新生成的内容判断自信度进行修改。删除置信度不高的文本
-
-        Return:
+        Args:
+            confs_class: str, the type of confidence score, 'value' or 'level'
+        Returns:
             ptexts_: list of str, sentences that exceed the hullucination threshold for first. If there are none, retain the first sentence.
             pconfs_: list of float, the confidence score for sentence in the ptexts_
             modified_text: str, need to retrieved sentence
@@ -1167,40 +1211,40 @@ class SeqConfidenceRAG(BasicRAG):
 
         reflect_tag = True   # 仅仅在前面所有句子置信度都高的情况下才可以反思，若前面出现了置信度较低的情况，则反思无效
         sentences = split_sentences(text)
-        confs_socres = []
+        confs_levels = []
         history_resp = ptext
         modified_texts = []
         for i, sent in enumerate(sentences):
             modify_text = sent
             if i > 0:
                 history_resp += (' ' + sentences[i-1])
-            confs = self._get_seq_confs_(question, history_resp, sent, docs)
-            if confs < self.reflection_threshold and confs >= self.hallucination_threshold and reflect_tag:
+            confs = self._get_confs_class_(question, history_resp, sent, docs, confs_class)
+            if 1 == confs and reflect_tag:
                 # 根据置信度进行幻觉判断，如果需要反思，则调用self._reflection生成反思后的文本，之后再对生成的新文本进行置信度的判断，如果置信度比之前的文本高则进行置信度的替换
                 # 若置信度过低，则将该句子mask掉
                 print(f'cur confs:{confs}, performed reflect')
                 reft_text = self._reflection_(question, history_resp, sent, docs)
-                reft_cons = self._get_seq_confs_(question, history_resp, reft_text, docs)
-                if reft_cons >= confs:
+                reft_cons = self._get_confs_class_(question, history_resp, reft_text, docs)
+                if reft_cons >= 0:
                     modify_text = reft_text
                     confs = reft_cons
-            elif confs < self.hallucination_threshold:
+            elif -1 == confs:
                 print(f'cur confs:{confs}, performed hullucination')
                 hallucination = True
                 modify_text = "[xxx]." if replace else sent
                 reflect_tag = False
 
             modified_texts.append(modify_text)
-            confs_socres.append(confs)
+            confs_levels.append(confs)
 
-        assert len(sentences) == len(confs_socres)
+        assert len(sentences) == len(confs_levels)
         ptexts_, pconfs_ = [], []
-        for seq_conf, modify_text, sent in zip(confs_socres, modified_texts, sentences):
+        for seq_conf, modify_text, sent in zip(confs_levels, modified_texts, sentences):
             if sent in ptext:
                 continue
             ptexts_.append(sent if modify_text == "[xxx]." else modify_text)
             pconfs_.append(seq_conf)
-            if not seq_conf >= self.hallucination_threshold:
+            if seq_conf == -1:
                 break
         modified_text = ' '.join(modified_texts)
         if len(ptexts_) == 0:
@@ -1224,6 +1268,7 @@ class SeqConfidenceRAG(BasicRAG):
                 new_text,
                 docs=docs,
                 replace=self.replace if "replace" in self.__dict__ else True,
+                confs_class=self.confs_class,
             )
 
             if not hallucination:
@@ -1257,7 +1302,7 @@ class SeqConfidenceRAG(BasicRAG):
                 if 'retr_accpt' in self.__dict__ and self.retr_accpt:
                     cur_conf = 1.0
                 else:
-                    cur_conf = self._get_seq_confs_(question, ptext, new_text, _docs_)
+                    cur_conf = self._get_seq_confs_value_(question, ptext, new_text, _docs_)
                 # 判断经过检索后新生成的句子是否置信度更高
                 if cur_conf >= pre_seq_conf:
                     ptext += (' ' + new_text)
