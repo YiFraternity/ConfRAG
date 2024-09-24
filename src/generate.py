@@ -1190,7 +1190,7 @@ class SeqConfidenceRAG(BasicRAG):
         else:
             confs = self._get_seq_confs_level_(question, history_resp, sent, docs)
         if self.reflection_threshold < 0:  # no reflect
-            if (confs_class == 'value' and confs >= self.hallucination_threshold) or (confs_class == 'level' and 'low' not in confs.lower()):
+            if (confs_class == 'value' and confs >= self.hallucination_threshold) or (confs_class == 'level' and 'high' in confs.lower()):
                 return 1
             else:
                 return -1
