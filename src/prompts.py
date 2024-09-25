@@ -20,19 +20,16 @@ Your Response:
 {response}
 Confidence:"""
 
-CONFIDENCE_CLASS_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.' I believe you have true knowledge, and I will provide you with "Context" and "Your response" which you generated base on the "Context". {docs}
-Analyse its answer given other options. What level of confidence do you have in "Your response".
-A. Very High Confidence
-B. High Confidence
-C. Medium Confidence
-D. Low Confidence
-E. Very Low Confidence
-Please note that your confidence level is related to the "Your Response". Please provide confidence first, and then provide an explanation. {use_docs}
+CONFIDENCE_CLASS_TEMPLATE = """Analyse "Your Response" given the "Context". How certain are you of Your Response?. Please provide confidence level first, and then provide an explanation. What's more, if the evidence provided is insufficient, please lower your confidence level.
+A. Very Certain
+B. Fairly Certain
+C. Lightly Certain
+D. Not Certain
+E. Very Uncertain
 
-Context:
-{context}
-Your Response:
-{response}
+{docs}
+Context: {context}
+Your Response: {response}
 Confidence Level:"""
 
 KEYWORDS_TEMPLATE = """Please use 2 to 3 keywords to express the idea behind this sentence.

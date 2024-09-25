@@ -33,7 +33,6 @@ def _get_docstr_(docs):
         doc_str += "Documents:\n"
         for i, doc in enumerate(docs):
             doc_str += f"[{i+1}] {doc}\n"
-        doc_str += '\n'
     return doc_str
 
 def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
@@ -82,7 +81,15 @@ def _get_confs_class_prompt_(question:str, history_resp:str, response:str, docs:
     return conf_prompt
 
 class BasicGenerator:
-    def __init__(self, model_name_or_path):
+
+    def __update_generate_config__(self, params):
+        for k in self.generate_config.keys():
+            if k in params:
+                self.generate_config[k] = params[k]
+        if self.generate_config["do_sample"] == False:
+            del self.generate_config["top_k"]
+
+    def __init__(self, model_name_or_path, params={}):
         logger.info(f"Loading model from {model_name_or_path}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
         self.model_config = AutoConfig.from_pretrained(
@@ -101,6 +108,17 @@ class BasicGenerator:
 
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        self.generate_config = {
+            "temperature": 1.0,
+            "top_p": 1.0,
+            "top_k": 50,
+            "repetition_penalty": 1.0,
+            "num_beams": 1,
+            "do_sample": True,
+        }
+        self.__update_generate_config__(params)
+
     def _apply_chat_template_(self, prompt, add_generation_prompt=True):
         message = [
             {"role": "system", "content": "You are a concise assistant, please do not repeat the content of the Answer"},
@@ -116,11 +134,7 @@ class BasicGenerator:
     def generate(
             self,
             input_text,
-            max_length,
-            temperature=0.6,
-            top_p=0.9,
-            top_k=50,
-            repetition_penalty=1.0,
+            max_new_tokens,
             return_logprobs=False,
             gen_type="answer",
             process_gen_text=False,
@@ -154,13 +168,10 @@ class BasicGenerator:
             outputs = self.model.generate(
                 input_ids = input_ids,
                 attention_mask = attention_mask,
-                max_new_tokens = max_length,
-                temperature = temperature,
-                top_p = top_p,
-                top_k = top_k,
-                repetition_penalty=repetition_penalty,
+                max_new_tokens = max_new_tokens,
                 return_dict_in_generate = True,
                 output_scores = True,
+                **self.generate_config,
             )
             transition_scores = self.model.compute_transition_scores(
                 outputs.sequences, outputs.scores, normalize_logits=True
@@ -180,12 +191,9 @@ class BasicGenerator:
         else:
             outputs = self.model.generate(
                 input_ids = input_ids,
-                max_new_tokens = max_length,
-                temperature = temperature,
-                top_p = top_p,
-                top_k = top_k,
-                repetition_penalty=repetition_penalty,
                 attention_mask = attention_mask,
+                max_new_tokens = max_new_tokens,
+                **self.generate_config,
             )
             generated_tokens = outputs[:, input_length:]
             text = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
@@ -197,12 +205,8 @@ class BasicGenerator:
     def generate_attn(
             self,
             input_text,
-            max_length,
+            max_new_tokens,
             solver="max",
-            temperature=0.6,
-            top_p=0.9,
-            top_k=50,
-            repetition_penalty=1.0,
             use_entropy = False,
             use_logprob = False,
         ):
@@ -217,11 +221,7 @@ class BasicGenerator:
         outputs = self.model.generate(
             input_ids = input_ids,
             attention_mask = attention_mask,
-            max_new_tokens = max_length,
-            temperature = temperature,
-            top_p = top_p,
-            top_k = top_k,
-            repetition_penalty = repetition_penalty,
+            max_new_tokens = max_new_tokens,
             return_dict_in_generate = True,
             output_scores = True,
         )
@@ -336,7 +336,7 @@ class BasicRAG:
         args = args.__dict__
         for k, v in args.items():
             setattr(self, k, v)
-        self.generator = BasicGenerator(self.model_name_or_path)
+        self.generator = BasicGenerator(self.model_name_or_path, self.__dict__)
         if "retriever" in self.__dict__:
             self.retriever_type = self.retriever
             if self.retriever_type == "BM25":
@@ -389,7 +389,6 @@ class BasicRAG:
         else:
             raise NotImplementedError
 
-
     def get_top_sentence(self, text):
         sentences = [sent.text.strip() for sent in nlp(text).sents]
         sentences = [sent for sent in sentences if len(sent) > 0]
@@ -406,11 +405,7 @@ class BasicRAG:
         prompt = _get_answer_prompt_([], demo=demo, question=question, text="")
         text, _, _, _ = self.generator.generate(
             prompt,
-            max_length=self.generate_max_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            repetition_penalty=self.repetition_penalty,
+            max_new_tokens=self.generate_max_length,
         )
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
@@ -429,10 +424,6 @@ class SingleRAG(BasicRAG):
         text, _, _, _ = self.generator.generate(
             prompt,
             self.generate_max_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            repetition_penalty=self.repetition_penalty,
         )
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
@@ -471,10 +462,6 @@ class FixLengthRAG(BasicRAG):
             text, answer, _, _ = self.generator.generate(
                 prompt,
                 self.generate_max_length,
-                temperature=self.temperature,
-                top_p=self.top_p,
-                top_k=self.top_k,
-                repetition_penalty=self.repetition_penalty,
                 process_gen_text=True,
             )
             if self.use_counter == True:
@@ -513,11 +500,7 @@ class FixLengthRAG(BasicRAG):
                     )
                     text, new_text, _, _ = self.generator.generate(
                         prompt,
-                        max_length=self.max_length,
-                        temperature=self.temperature,
-                        top_p=self.top_p,
-                        top_k=self.top_k,
-                        repetition_penalty=self.repetition_penalty,
+                        max_new_tokens=self.max_length,
                         return_logprobs=False,
                         gen_type='answer',
                         process_gen_text=True,
@@ -630,9 +613,6 @@ class TokenRAG(BasicRAG):
                 text, new_text, _, _ = self.generator.generate(
                     prompt,
                     self.generate_max_length,
-                    temperature=self.temperature,
-                    top_p=self.top_p,
-                    top_k=self.top_k,
                     repetition_penalty=self.repetition_penalty,
                 )
                 if self.use_counter == True:
@@ -773,90 +753,6 @@ class AttnWeightRAG(BasicRAG):
                 # )
                 return True, prev, tokens[tl:tr], thres
         return False, text, None, None
-
-    # def fetch_forward(self, prev_text, curr_tokens, curr_hit):
-    #     curr_text = " ".join(curr_tokens)
-
-    #     all_text = prev_text + " " + curr_text
-    #     input_ids = self.generator.tokenizer.encode(all_text, return_tensors="pt")
-    #     input_length = input_ids.shape[1]
-    #     tokens_tmp = self.generator.tokenizer.convert_ids_to_tokens(input_ids[0])
-
-    #     atten_tmp = self.generator.model(input_ids, output_attentions=True).attentions[-1][0]
-
-    #     # merge tokens
-    #     range_ = []
-    #     for i, t in enumerate(tokens_tmp):
-    #         if i == 0 or t.startswith(self.generator.space_token) or input_ids[0][i] == 13:
-    #             range_.append([i, i])
-    #         else:
-    #             range_[-1][-1] += 1
-    #     tokens = []
-    #     for r in range_:
-    #         tokenseq = "".join(tokens_tmp[r[0]: r[1]+1]).replace(self.generator.space_token, "")
-    #         tokens.append(tokenseq)
-
-    #     curr_st = len(tokens) - len(curr_tokens)
-    #     curr_ed = len(tokens)
-    #     tl, tr = 0, len(tokens)
-    #     if "retrieve_query_type" in self.__dict__:
-    #         if self.retrieve_query_type == "only_forward":
-    #             tr = curr_st
-    #         elif self.retrieve_query_type == "current":
-    #             tl, tr = curr_st, curr_ed
-    #         elif self.retrieve_query_type == "top_k_and_current":
-    #             tr = curr_st
-
-    #     attns = []
-    #     for r in range_:
-    #         att = torch.zeros(atten_tmp.shape[0], input_length)
-    #         for i in range(r[0], r[1] + 1):
-    #             att += atten_tmp[:, i]
-    #         att /= (r[1] - r[0] + 1)
-    #         att = torch.mean(att, dim=0)
-    #         att = att[tl:tr]
-    #         if att.shape[0] > 1:
-    #             att = att / sum(att[1:]).item()
-    #         attns.append(att)
-
-    #     # 计算每个超过阈值的 token 在前文的 attentions
-    #     forward_attns = torch.zeros(tr - tl)
-    #     hit_cnt = 0
-    #     for i in range(len(curr_hit)):
-    #         if curr_hit[i] == 1:
-    #             forward_attns += attns[curr_st + i]
-    #             hit_cnt += 1
-    #     forward_attns /= hit_cnt
-    #     forward_attns = forward_attns.tolist()
-
-    #     if "retrieve_keep_weight" in self.__dict__:
-    #         topk_token = []
-    #         for tok, att in zip(tokens[tl:tr], forward_attns):
-    #             if att * (tr - tl + 1) >= self.retrieve_keep_weight:
-    #                 topk_token.append(tok)
-
-    #     else:
-    #         topk_attn = sorted(forward_attns, reverse=True)
-    #         if "retrieve_keep_top_k" in self.__dict__:
-    #             top_k = min(self.retrieve_keep_top_k, tr - tl)
-    #         elif "retrieve_keep_ratio" in self.__dict__:
-    #             top_k = int((tr - tl) * self.retrieve_keep_ratio)
-    #         else:
-    #             raise NotImplementedError
-    #         topk_attn = topk_attn[:top_k]
-    #         topk_token = []
-    #         for tok, att in zip(tokens[tl:tr], forward_attns):
-    #             if att in topk_attn:
-    #                 topk_token.append(tok)
-
-    #     final_text = " ".join(topk_token)
-    #     if "retrieve_query_type" in self.__dict__ and self.retrieve_query_type == "top_k_and_current":
-    #         mask_curr = " ".join(
-    #             list(curr_tokens[i] if curr_hit[i] == 0 else "" for i in range(len(curr_tokens)))
-    #         )
-    #         return final_text + " " + mask_curr
-    #     else:
-    #         return final_text
 
     def keep_real_words(self, prev_text, curr_tokens, curr_hit):
         curr_text = " ".join(curr_tokens)
@@ -1012,9 +908,6 @@ class AttnWeightRAG(BasicRAG):
                 new_text, _, _, _ = self.generator.generate(
                     prompt,
                     max_length = self.generate_max_length,
-                    temperature = self.temperature,
-                    top_p = self.top_p,
-                    top_k = self.top_k,
                     process_gen_text = False,
                 )
                 if self.use_counter == True:
@@ -1045,11 +938,7 @@ class SeqConfidenceRAG(BasicRAG):
         )
         text, confs, _, _ = self.generator.generate(
             conf_prompt,
-            max_length=self.generate_confidence_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            repetition_penalty=self.repetition_penalty,
+            max_new_tokens=self.generate_confidence_length,
             return_logprobs=False,
             gen_type='confidence',
             process_gen_text=True,
@@ -1067,10 +956,7 @@ class SeqConfidenceRAG(BasicRAG):
         )
         text, confs, _, _ = self.generator.generate(
             conf_prompt,
-            max_length=self.generate_confidence_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
+            max_new_tokens=self.generate_confidence_length,
             process_gen_text=False,
         )
         if self.use_counter:
@@ -1082,11 +968,7 @@ class SeqConfidenceRAG(BasicRAG):
         # 当前轮次的新文本
         text, new_text, _, _ = self.generator.generate(
             prompt,
-            max_length=self.generate_max_length if generate_length==-1 else generate_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            repetition_penalty=self.repetition_penalty,
+            max_new_tokens=self.generate_max_length if generate_length==-1 else generate_length,
             return_logprobs=False,
             gen_type='answer',
             process_gen_text=True,
@@ -1101,7 +983,7 @@ class SeqConfidenceRAG(BasicRAG):
         keyword_prompt = KEYWORDS_TEMPLATE.format(sentence=addition_info)
         _, keywords, _, _ = self.generator.generate(
             keyword_prompt,
-            max_length=10,
+            max_new_tokens=10,
             gen_type='keywords',
             process_gen_text=True,
         )
@@ -1146,11 +1028,7 @@ class SeqConfidenceRAG(BasicRAG):
         advice_prompt = ADVICE_TEMPLATE.format(**tutor_data)
         text, advice, _, _ = self.generator.generate(
             advice_prompt,
-            max_length=self.max_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            repetition_penalty=self.repetition_penalty,
+            max_new_tokens=self.max_length,
             return_logprobs=False,
             gen_type='advice',
             process_gen_text=True,
@@ -1171,11 +1049,7 @@ class SeqConfidenceRAG(BasicRAG):
         reflect_prompt = REFLECTION_TEMPLATE.format(**reft_prompt)
         text, reflect, _, _ = self.generator.generate(
             reflect_prompt,
-            max_length=self.max_length,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            repetition_penalty=self.repetition_penalty,
+            max_new_tokens=self.max_length,
             return_logprobs=False,
             gen_type='reflection',
             process_gen_text=True,
@@ -1189,15 +1063,32 @@ class SeqConfidenceRAG(BasicRAG):
             confs = self._get_seq_confs_value_(question, history_resp, sent, docs)
         else:
             confs = self._get_seq_confs_level_(question, history_resp, sent, docs)
+
+        def __conf_level_in_confs__(confs):
+            high_conf_levels = ['very certain', 'fairly certain']
+            mid_conf_levels = ['somewhat certain']
+            low_conf_levels = ['not certain', 'very uncertain']
+            for conf_level in high_conf_levels:
+                if conf_level in confs.lower():
+                    return 'high'
+            for conf_level in mid_conf_levels:
+                if conf_level in confs.lower():
+                    return 'mid'
+            for conf_level in low_conf_levels:
+                if conf_level in confs.lower():
+                    return 'low'
         if self.reflection_threshold < 0:  # no reflect
-            if (confs_class == 'value' and confs >= self.hallucination_threshold) or (confs_class == 'level' and 'high' in confs.lower()):
+            if (confs_class == 'value' and confs >= self.hallucination_threshold) or \
+            (confs_class=='level' and __conf_level_in_confs__(confs)=='high'):
                 return 1
             else:
                 return -1
 
-        if (confs_class == 'value' and confs >= self.reflection_threshold) or (confs_class == 'level' and 'high' in confs.lower()):
+        if (confs_class == 'value' and confs >= self.reflection_threshold) or \
+            (confs_class == 'level' and __conf_level_in_confs__(confs)=='high'):
             return 1
-        elif (confs_class == 'value' and confs < self.hallucination_threshold) or (confs_class == 'level' and 'low' in confs.lower()):
+        elif (confs_class == 'value' and confs < self.hallucination_threshold) or \
+            (confs_class == 'level' and __conf_level_in_confs__(confs)=='low'):
             return -1
         else:
             return 0
@@ -1300,7 +1191,7 @@ class SeqConfidenceRAG(BasicRAG):
                     }
                 else:
                     add_dict = {
-                        'addition_info': modified_text,
+                        'addition_info': (ptexts[-1] if len(ptexts)>0 and len(ptexts_)==1 else "") + modified_text,
                         'use_keywords': True,
                     }
                 _docs_ = self._get_retr_docs_(question, **add_dict)
