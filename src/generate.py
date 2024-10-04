@@ -405,7 +405,7 @@ class BasicRAG:
         prompt = _get_answer_prompt_([], demo=demo, question=question, text="")
         text, _, _, _ = self.generator.generate(
             prompt,
-            max_new_tokens=self.generate_max_length,
+            max_new_tokens=self.max_length,
         )
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
@@ -423,7 +423,7 @@ class SingleRAG(BasicRAG):
         prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text="")
         text, _, _, _ = self.generator.generate(
             prompt,
-            self.generate_max_length,
+            self.max_length,
         )
         if self.use_counter == True:
             self.counter.add_generate(text, self.generator.tokenizer)
