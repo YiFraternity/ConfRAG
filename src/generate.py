@@ -907,7 +907,7 @@ class AttnWeightRAG(BasicRAG):
                 )
                 new_text, _, _, _ = self.generator.generate(
                     prompt,
-                    max_length = self.generate_max_length,
+                    max_new_tokens = self.generate_max_length,
                     process_gen_text = False,
                 )
                 if self.use_counter == True:
