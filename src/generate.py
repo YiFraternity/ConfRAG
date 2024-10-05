@@ -613,7 +613,6 @@ class TokenRAG(BasicRAG):
                 text, new_text, _, _ = self.generator.generate(
                     prompt,
                     self.generate_length,
-                    repetition_penalty=self.repetition_penalty,
                 )
                 if self.use_counter == True:
                     self.counter.add_generate(text, self.generator.tokenizer)
