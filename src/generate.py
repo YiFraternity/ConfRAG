@@ -461,7 +461,7 @@ class FixLengthRAG(BasicRAG):
             prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text=ptext)
             text, answer, _, _ = self.generator.generate(
                 prompt,
-                self.generate_max_length,
+                self.generate_length,
                 process_gen_text=True,
             )
             if self.use_counter == True:
@@ -583,7 +583,7 @@ class TokenRAG(BasicRAG):
             )
             new_text, tokens, logprobs = self.generator.generate(
                 prompt,
-                self.generate_max_length,
+                self.generate_length,
                 return_logprobs=True
             )
             if self.use_counter == True:
@@ -612,7 +612,7 @@ class TokenRAG(BasicRAG):
                 )
                 text, new_text, _, _ = self.generator.generate(
                     prompt,
-                    self.generate_max_length,
+                    self.generate_length,
                     repetition_penalty=self.repetition_penalty,
                 )
                 if self.use_counter == True:
@@ -840,7 +840,7 @@ class AttnWeightRAG(BasicRAG):
             )
             new_text, tokens, attns, logprobs, entropies = self.generator.generate_attn(
                 prompt,
-                self.generate_max_length,
+                self.generate_length,
                 # self.attention_solver,
                 use_entropy = self.method == "dragin",
                 use_logprob = self.method == "attn_prob"
@@ -907,7 +907,7 @@ class AttnWeightRAG(BasicRAG):
                 )
                 new_text, _, _, _ = self.generator.generate(
                     prompt,
-                    max_new_tokens = self.generate_max_length,
+                    max_new_tokens = self.generate_length,
                     process_gen_text = False,
                 )
                 if self.use_counter == True:
@@ -916,7 +916,6 @@ class AttnWeightRAG(BasicRAG):
                 new_text = self.get_top_sentence(new_text)
                 ptext += (" " + new_text.strip())
 
-            # 判断 token 的个数要少于 generate_max_length
             ptext = ptext.strip()
             tokens_count = len(self.generator.tokenizer.encode(ptext))
             if tokens_count >= self.max_length or tokens_count <= old_len or "the answer is" in ptext:
@@ -968,7 +967,7 @@ class SeqConfidenceRAG(BasicRAG):
         # 当前轮次的新文本
         text, new_text, _, _ = self.generator.generate(
             prompt,
-            max_new_tokens=self.generate_max_length if generate_length==-1 else generate_length,
+            max_new_tokens=self.generate_length if generate_length==-1 else generate_length,
             return_logprobs=False,
             gen_type='answer',
             process_gen_text=True,
