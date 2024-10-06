@@ -1,0 +1,21 @@
+{
+    "model_name_or_path": "/home/yhliu/models/open_models/qwen/Qwen2.5-7B-Instruct",
+    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
+    "method": "fix-sentence-retrieval",
+    "dataset": "hotpotqa",
+    "data_path": "data/hotpotqa",
+    "fewshot": 8,
+    "sample": 1000,
+    "shuffle": false,
+    "num_beams": 1,
+    "do_sample": false,
+    "repetition_penalty": 1.2,
+    "generate_length": 64,
+    "max_length": 256,
+    "query_formulation": "forward_all",
+    "output_dir": "results/FS-RAG/Qwen2.5-7B-Instruct/hotpotqa",
+    "retriever": "BGEReranker",
+    "es_index_name": "wiki",
+    "retrieve_topk": 3,
+    "use_counter": true
+}

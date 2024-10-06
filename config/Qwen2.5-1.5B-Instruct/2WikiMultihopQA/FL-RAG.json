@@ -1,0 +1,21 @@
+{
+    "model_name_or_path": "/home/yhliu/models/open_models/qwen/Qwen2.5-1.5B-Instruct",
+    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
+    "method": "fix-length-retrieval",
+    "dataset": "2wikimultihopqa",
+    "data_path": "data/2wikimultihopqa",
+    "fewshot": 8,
+    "sample": 1000,
+    "shuffle": false,
+    "num_beams": 1,
+    "do_sample": false,
+    "repetition_penalty": 1.2,
+    "generate_length": 64,
+    "max_length": 256,
+    "query_formulation": "direct",
+    "output_dir": "results/FL-RAG/Qwen2.5-1.5B-Instruct/2wikimultihopqa",
+    "retriever": "BGEReranker",
+    "es_index_name": "wiki",
+    "retrieve_topk": 3,
+    "use_counter": true
+}

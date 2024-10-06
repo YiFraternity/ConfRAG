@@ -1,0 +1,18 @@
+{
+    "model_name_or_path": "/home/yhliu/models/open_models/Llama3/Meta-Llama-3-8B-Instruct",
+    "method": "non-retrieval",
+    "dataset": "hotpotqa",
+    "data_path": "/home/yhliu/data/hotpotqa",
+    "fewshot": 8,
+    "sample": 1000,
+    "shuffle": false,
+    "temperature": 0.6,
+    "top_p": 0.9,
+    "top_k": 1,
+    "repetition_penalty": 1.2,
+    "max_length": 256,
+    "query_formulation": "direct",
+    "output_dir": "results/wo-RAG/Meta-Llama-3-8B-Instruct/hotpotqa",
+    "es_index_name": "wiki",
+    "use_counter": true
+}

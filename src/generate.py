@@ -1163,7 +1163,7 @@ class SeqConfidenceRAG(BasicRAG):
                 new_text,
                 docs=docs,
                 replace=self.replace if "replace" in self.__dict__ else True,
-                confs_class=self.confs_class,
+                confs_class=self.confs_class if "confs_class" in self.__dict__ else 'value',
             )
 
             if not hallucination:

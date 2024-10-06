@@ -1,14 +1,17 @@
 {
-    "model_name_or_path": "/group_homes/our_llm_domain/home/share/open_models/llama3/Meta-Llama-3-8B-Instruct",
+    "model_name_or_path": "/home/yhliu/models/open_models/Llama3/Meta-Llama-3-8B-Instruct",
     "method": "non-retrieval",
     "dataset": "strategyqa",
-    "data_path": "/home/liuyh0916/data/open_source_data/QA/strategyqa",
+    "data_path": "data/strategyqa",
     "fewshot": 6,
     "sample": 1000,
     "shuffle": false,
-    "generate_max_length": 1024,
+    "num_beams": 1,
+    "do_sample": false,
+    "repetition_penalty": 1.2,
+    "generate_length": 256,
     "query_formulation": "direct",
-    "output_dir": "results/no-retrieve/Meta-Llama-3-8B-Instruct/strategyqa",
+    "output_dir": "results/wo-RAG/Meta-Llama-3-8B-Instruct/strategyqa",
     "es_index_name": "wiki",
     "use_counter": true
 }

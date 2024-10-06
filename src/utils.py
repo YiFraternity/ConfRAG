@@ -149,7 +149,7 @@ if __name__ == '__main__':
     text = """Sure, I\'d be happy to help! Based on the context you provided, my response would be:\n\n"1. Seraphim is a concept in Christian theology, referring to a high rank of angels."\n\nMy confidence in this response is 1, as I am familiar with the concept of Seraphim in Christian theology and can provide a correct definition.</s>"""
     test_txts = ["I don't know", "I'm not sure", "The answer is unknown", "The answer is A"]
     unknow_answer = []
-    with open('results/SeqRAG/Qwen1.5-7B-Chat/hotpotqa/BGEReranker/output.txt', 'r') as f:
+    with open('results/SeqValue/Qwen1.5-7B-Chat/hotpotqa/BGEReranker/output.txt', 'r') as f:
         for line in f:
             text = line.strip()
             import json

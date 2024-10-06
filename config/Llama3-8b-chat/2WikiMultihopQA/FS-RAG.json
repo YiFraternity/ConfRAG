@@ -1,0 +1,22 @@
+{
+    "model_name_or_path": "/home/yhliu/models/open_models/Llama3/Meta-Llama-3-8B-Instruct",
+    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
+    "method": "fix-sentence-retrieval",
+    "dataset": "2wikimultihopqa",
+    "data_path": "data/2wikimultihopqa",
+    "fewshot": 8,
+    "sample": 1000,
+    "shuffle": false,
+    "temperature": 0.6,
+    "top_p": 0.9,
+    "top_k": 50,
+    "repetition_penalty": 1.2,
+    "fix_length": 64,
+    "generate_length": 256,
+    "query_formulation": "direct",
+    "output_dir": "results/FS-RAG/Meta-Llama-3-8B-Instruct/2wikimultihopqa",
+    "retriever": "BGEReranker",
+    "es_index_name": "wiki",
+    "retrieve_topk": 3,
+    "use_counter": true
+}
