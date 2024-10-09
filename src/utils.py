@@ -6,6 +6,14 @@ nlp = spacy.load("en_core_web_sm")
 ANSWER_NEW_TOKEN_NUM = 2048
 
 
+def find_element_index(lst, element):
+    try:
+        index = lst.index(element)
+        return index
+    except ValueError:
+        return -1
+
+
 def split_sentences(text: str) -> List[str]:
     sentences = [sent.text.strip() for sent in nlp(text).sents]
     sentences = [sent for sent in sentences if len(sent) > 0]
@@ -98,6 +106,18 @@ def process_keywords_text(raw_text, prompt):
     text = text.replace('\n', ' ')
     return text
 
+def process_retr_info_text(raw_text, prompt):
+    text = raw_text
+    ptns_choice = [
+        r'(?i).*?\bquery\s*[:：]\s*',
+        r'(?i).*?\bquery is',
+        r'(?i).*?\ba query is',
+    ]
+    for ptns in ptns_choice:
+        pattern = re.compile(ptns, re.DOTALL)
+        text = re.sub(pattern, '', text)
+    text = text.replace('\n', ' ')
+    return text
 
 def is_ans_unknown(answers: List[str]) -> bool:
     unknown_values = [

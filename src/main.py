@@ -95,6 +95,8 @@ def main():
 
     logger.info("start inference")
     for i in tqdm(range(len(data))):
+        if i != 1:
+            continue
         last_counter = copy(model.counter)
         batch = data[i]
         pred = model.inference(batch["question"], batch["demo"])
