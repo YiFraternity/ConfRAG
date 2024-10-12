@@ -994,6 +994,8 @@ class SeqConfidenceRAG(BasicRAG):
             self.counter.add_generate(text, self.generator.tokenizer)
 
         confs = __conf_level_in_confs__(text)
+        import IPython
+        IPython.embed()
         def __return_confs__(confs):
             if 'high' == confs:
                 return confs, 'exact'
@@ -1021,6 +1023,8 @@ class SeqConfidenceRAG(BasicRAG):
             )
             if self.use_counter:
                 self.counter.add_generate(text, self.generator.tokenizer)
+            import IPython
+            IPython.embed()
             confs = __conf_level_in_confs__(text)
             return __return_confs__(confs)
 
@@ -1039,6 +1043,8 @@ class SeqConfidenceRAG(BasicRAG):
         )
         if self.use_counter:
             self.counter.add_generate(text, self.generator.tokenizer)
+        import IPython
+        IPython.embed()
         return text, new_text
 
     def _get_keywords_(self, addition_info):
@@ -1104,6 +1110,8 @@ class SeqConfidenceRAG(BasicRAG):
         retrieve_question = retrieve_question.strip()
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         docs = docs.tolist()
+        import IPython
+        IPython.embed()
         return docs, retrieve_question
 
     def _reflection_(self, question, history_resp, response, docs=[]):
@@ -1252,7 +1260,6 @@ class SeqConfidenceRAG(BasicRAG):
                 new_text,
                 docs=docs,
             )
-
             if not hallucination:
                 ptext += (' ' + (' '.join(ptexts_)))
                 ptexts.extend(ptexts_)
@@ -1302,7 +1309,7 @@ class SeqConfidenceRAG(BasicRAG):
                     # ptext = ''
                     unknown_info = ptexts[idx] if idx and idx >= 0 else ptext
                     unknown_info = unknown_info.strip() if len(unknown_info)>0 else ""
-                    docs, _ = self._get_retr_docs_(question, [], unknown_info)
+                    docs, _ = self._get_retr_docs_(question, [], unknown_info, 'lack knowledge')
                     _, new_text = self._generate_(docs, demo, question, ptext, generate_length=self.max_length)
                     ptext += (' ' + new_text)
                     ptext = ptext.strip()

@@ -4,7 +4,7 @@ ANSWER_QUESTION_TEMPLETE = """{docs}Please answer the question by thinking step-
 ### Answer: {gen_text}"""
 
 ANSWER_USE_DEMO_TEMPLATE = """ And I hope you can answer the question in the same format as the examples."""
-ANSWER_NOT_USE_DEMO_TEMPLATE = """ I hope you can only provide the reasoning and answer. Please note if the Answer is sufficient to resolve the Question, immediately stop reasoning and provide the answer, starting with "So, the answer is..."."""
+ANSWER_NOT_USE_DEMO_TEMPLATE = """ I hope you can only provide the reasoning and answer. Please note if the Answer is sufficient to resolve the Question, immediately stop reasoning and provide the answer, starting with "So, the answer is """
 
 ANSWER_USE_DOCS_TEMPLATE = """ Please step-by-step through the process of considering what kind of knowledge is needed to answer the question. If such knowledge is present in the document, please utilize it to answer the Question. If not, please disregard the docs."""
 
@@ -24,14 +24,14 @@ Please provide your score of confidence in "Your response" to demonstrate your f
 ### Your Response: {response}
 ### Confidence:"""
 
-CONFIDENCE_CLASS_TEMPLATE = """Analyse "Your Response" given the "Context". How certain are you of Your Response?. Please provide confidence level first, and then provide an explanation. What's more, if the evidence provided is insufficient, please lower your confidence level.
+CONFIDENCE_CLASS_TEMPLATE = """Analyse and generate a confidence level for the "Your Response" based on the "Context". Please note provide confidence level first, and then provide an explanation. What's more, if the evidence provided is insufficient, please lower your confidence level.
 A. Very Certain
 B. Fairly Certain
 C. Lightly Certain
 D. Not Certain
 E. Very Uncertain
-{docs}
 
+{docs}
 ### Context: {context}
 ### Your Response: {response}
 ### Confidence Level:"""
