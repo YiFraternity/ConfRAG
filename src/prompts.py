@@ -1,31 +1,28 @@
-ANSWER_QUESTION_TEMPLETE = """Please answer the question by thinking step-by-step in fully English.{examples}{use_demo}{use_continue}
+ANSWER_QUESTION_TEMPLETE = """{docs}Please answer the question by thinking step-by-step in fully English.{examples}{use_demo}{use_continue}
 
-{docs}{use_docs}
-Question: {question}
-Answer: {gen_text}"""
+### Question: {question}
+### Answer: {gen_text}"""
 
-ANSWER_USE_DEMO_TEMPLATE = """ And I hope you can answer the question in the same format as the examples"""
-ANSWER_NOT_USE_DEMO_TEMPLATE = """ I hope you can only provide the reasoning and answer. And the reasoning process is sufficient and the answer is complete, conclude with "So, the answer is" indicating a definitive response."""
+ANSWER_USE_DEMO_TEMPLATE = """ And I hope you can answer the question in the same format as the examples."""
+ANSWER_NOT_USE_DEMO_TEMPLATE = """ I hope you can only provide the reasoning and answer. Please note if the Answer is sufficient to resolve the Question, immediately stop reasoning and provide the answer, starting with "So, the answer is..."."""
 
-ANSWER_USE_DOCS_TEMPLATE = """ Please step-by-step through the process of considering what kind of knowledge is needed to answer the question. If such knowledge is present in the document, please utilize it. If not, please disregard it."""
+ANSWER_USE_DOCS_TEMPLATE = """ Please step-by-step through the process of considering what kind of knowledge is needed to answer the question. If such knowledge is present in the document, please utilize it to answer the Question. If not, please disregard the docs."""
 
-CONTINUE_ANSWER_TEMPLATE = """ If more detail is needed, continue reasoning followed by reasoning, and aim to conclude promptly once the answer is fully developed. And Please do not provide anything unrelated to question, reasoning and answer, such as "Let's me help.", "Let's analyze the information provided", "I'd be delighted to assist!" and so on. And please proceed with reasoning based on the provided Answer. \n\nPlease make sure to continue reasoning with the given Answer and must do not repeat the reasoning given in the given Answer."""
+CONTINUE_ANSWER_TEMPLATE = """ If more detail is needed, continue reasoning and then provide the answer, aiming to conclude promptly once the Answer is sufficient to resolve the Question. Avoid adding any unrelated phrases, such as "Let me help," "Let's analyze the information," or similar expressions. Additionally, ensure that you trust Answer and do not repeat once the Answer has been provided."""
 
-NOT_CONTINUE_ANSWER_TEMPLATE = """ And Please do not provide anything unrelated to reasoning, such as "Let's me help.", "Let's analyze the information provided", "I'd be delighted to assist!" and so on."""
+START_ANSWER_TEMPLATE = """ And Please do not provide anything unrelated to reasoning, such as "Let's me help.", "Let's analyze the information provided", "I"d be delighted to assist!" and so on."""
 
-STEP_REASON_ANSWER_TEMPLATE = """If the document contains information relevant to the current resoning path, please respond based on that information. And If the document does not contain content related to the current resoning path, return 'None'.
+STEP_REASON_ANSWER_TEMPLATE = """If the document contains information relevant to the current resoning path, please respond based on that information. And If the document does not contain content related to the current resoning path, return "None".
 {docs}
-Resoning path: {reasoning}
-Answer:"""
+### Resoning path: {reasoning}
+### Answer:"""
 
-CONFIDENCE_TEMPLATE = """Confucius said, 'To know what you know and to know what you do not know, that is true knowledge.' I believe you have true knowledge, and I will provide you with "Context" and "Your response" which you generated base on the "Context". {docs}
+CONFIDENCE_TEMPLATE = """Confucius said, "To know what you know and to know what you do not know, that is true knowledge." I believe you have true knowledge, and I will provide you with "Context" and "Your response" which you generated base on the "Context". {docs}
 Please provide your score of confidence in "Your response" to demonstrate your familiarity with the relevant knowledge. Please note that the confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the "Your Response". Please provide confidence first, and then provide an explanation. {use_docs}
 
-Context:
-{context}
-Your Response:
-{response}
-Confidence:"""
+### Context: {context}
+### Your Response: {response}
+### Confidence:"""
 
 CONFIDENCE_CLASS_TEMPLATE = """Analyse "Your Response" given the "Context". How certain are you of Your Response?. Please provide confidence level first, and then provide an explanation. What's more, if the evidence provided is insufficient, please lower your confidence level.
 A. Very Certain
@@ -35,32 +32,32 @@ D. Not Certain
 E. Very Uncertain
 {docs}
 
-Context: {context}
-Your Response: {response}
-Confidence Level:"""
+### Context: {context}
+### Your Response: {response}
+### Confidence Level:"""
 
 KEYWORDS_TEMPLATE = """Please use 2 to 3 keywords to express the idea behind this sentence.
-Sentence: {sentence}"""
+### Sentence: {sentence}"""
 
 LACK_KNOW_INFO_TEMPLATE = """Your response lacks sufficient relevant knowledge to answer the provided question. Please think deeply and generate a relevant query based on given the Response to find the knowledge. Please do not add any entities unrelated to given the Response. Please only generate a query, do not provide any other entities.
-Question: {question}
-Response: {response}
-Query:"""
+### Question: {question}
+### Response: {response}
+### Query:"""
 
 HALLUICATION_INFO_TEMPLATE = """Your response contains hallucination information. Please think step-by-step and generate a relevant query based on the Question and Response, but avoid using any Entities terms from the response.
-Response: {response}
-Question: {question}
-Query:"""
+### Response: {response}
+### Question: {question}
+### Query:"""
 
 ENTITY_TEMPLATE = """Please identify all entities in the given sentence. If there are no entities, respond with 'None'. If multiple entities are present, list them in the following format: 'Entity1, Entity2, Entity3'.
 
-Sentence: {sentence}
-Entities:"""
+### Sentence: {sentence}
+### Entities:"""
 
 
 ENTITY_REPLEACE_TEMPLATE = """Replace the entity in the following sentence with another entity of the same type (e.g., if the entity is a female movie actress, replace it with another female actress) and return the modified sentence. If there is no entity in the sentence, return 'None'.
-Sentence: {sentence}
-Modified Sentence:"""
+### Sentence: {sentence}
+### Modified Sentence:"""
 
 CONFIDENCE_USE_DOCS_SUFFIX = """Above are the documents related to the "Context". """
 CONFIDENCE_USE_DOCS_PREFIX = """Below are the documents related to the "Context"."""

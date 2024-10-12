@@ -28,7 +28,7 @@ def _get_docstr_(docs):
         doc_str += ('-'*50 + '\n')
     return doc_str
 
-def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
+def _get_answer_prompt_(docs: list, demo: list, question: str, text:str, reason_pth=''):
     doc_str = _get_docstr_(docs)
     if len(demo) > 0:
         examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
@@ -38,10 +38,12 @@ def _get_answer_prompt_(docs: list, demo: list, question: str, text:str):
     prompt = ANSWER_QUESTION_TEMPLETE.format(
         examples=examples,
         docs=doc_str,
-        question=question,
         use_docs=ANSWER_USE_DOCS_TEMPLATE if len(docs) > 0 else '',
         use_demo=ANSWER_USE_DEMO_TEMPLATE if len(demo) > 0 else ANSWER_NOT_USE_DEMO_TEMPLATE,
-        use_continue=CONTINUE_ANSWER_TEMPLATE if len(text) > 0 else NOT_CONTINUE_ANSWER_TEMPLATE,
+        use_continue=CONTINUE_ANSWER_TEMPLATE if len(text) > 0 else START_ANSWER_TEMPLATE,
+        use_reaoning=ANSWER_USE_REASONING if len(reason_pth) > 0 else '',
+        question=question,
+        reason_pth=("Reason: {}\n".format(reason_pth)) if len(reason_pth) > 0 else '',
         gen_text=text,
     )
     return prompt
@@ -72,6 +74,15 @@ def _get_confs_class_prompt_(question:str, history_resp:str, response:str, docs:
         use_docs = CONFIDENCE_USE_DOCS if len(docs) > 0 else '',
     )
     return conf_prompt
+
+
+def _get_reason_prompt_(docs, reason_pth):
+    doc_str = _get_docstr_(docs)
+    reason_prompt = STEP_REASON_ANSWER_TEMPLATE.format(
+        docs=doc_str,
+        reasoning=reason_pth,
+    )
+    return reason_prompt
 
 class BasicGenerator:
 
@@ -983,8 +994,6 @@ class SeqConfidenceRAG(BasicRAG):
             self.counter.add_generate(text, self.generator.tokenizer)
 
         confs = __conf_level_in_confs__(text)
-        # import IPython
-        # IPython.embed()
         def __return_confs__(confs):
             if 'high' == confs:
                 return confs, 'exact'
@@ -1015,8 +1024,11 @@ class SeqConfidenceRAG(BasicRAG):
             confs = __conf_level_in_confs__(text)
             return __return_confs__(confs)
 
-    def _generate_(self, docs, demo, question, ptext, generate_length=-1):
-        prompt = _get_answer_prompt_(docs, [], question, ptext)
+    def _generate_(self, docs=[], demo=[], question='', ptext='', qtype='answer', generate_length=-1):
+        if qtype == 'reason':
+            prompt = _get_reason_prompt_(docs, reason_pth=question)
+        else:
+            prompt = _get_answer_prompt_(docs, demo, question, ptext)
         # 当前轮次的新文本
         text, new_text, _, _ = self.generator.generate(
             prompt,
@@ -1027,8 +1039,6 @@ class SeqConfidenceRAG(BasicRAG):
         )
         if self.use_counter:
             self.counter.add_generate(text, self.generator.tokenizer)
-        import IPython
-        IPython.embed()
         return text, new_text
 
     def _get_keywords_(self, addition_info):
@@ -1094,9 +1104,7 @@ class SeqConfidenceRAG(BasicRAG):
         retrieve_question = retrieve_question.strip()
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         docs = docs.tolist()
-        import IPython
-        IPython.embed()
-        return docs
+        return docs, retrieve_question
 
     def _reflection_(self, question, history_resp, response, docs=[]):
         """
@@ -1229,6 +1237,7 @@ class SeqConfidenceRAG(BasicRAG):
         return ptexts_, pconfs_, pconf_types_, hallucination
 
     def inference(self, question, demo):
+        demo = []
         ptext = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
         ptexts = []
         docs = []
@@ -1244,8 +1253,6 @@ class SeqConfidenceRAG(BasicRAG):
                 docs=docs,
             )
 
-            # import IPython
-            # IPython.embed()
             if not hallucination:
                 ptext += (' ' + (' '.join(ptexts_)))
                 ptexts.extend(ptexts_)
@@ -1261,10 +1268,8 @@ class SeqConfidenceRAG(BasicRAG):
                     pre_seq_conf = -1
                     pre_seq = ""
                 retr_num += 1
-                docs = self._get_retr_docs_(question, ptexts, pre_seq, pre_seq_conf_type)
-                _, new_text = self._generate_(docs, demo, question, ptext, generate_length=32)
-                import IPython
-                IPython.embed()
+                docs, retr_quest = self._get_retr_docs_(question, ptexts, pre_seq, pre_seq_conf_type)
+                _, new_text = self._generate_(docs=docs, question=retr_quest, qtype='reason')
                 ptexts.append(new_text)
                 ptext += (' ' + new_text)
                 """
@@ -1297,7 +1302,7 @@ class SeqConfidenceRAG(BasicRAG):
                     # ptext = ''
                     unknown_info = ptexts[idx] if idx and idx >= 0 else ptext
                     unknown_info = unknown_info.strip() if len(unknown_info)>0 else ""
-                    docs = self._get_retr_docs_(question, [], unknown_info)
+                    docs, _ = self._get_retr_docs_(question, [], unknown_info)
                     _, new_text = self._generate_(docs, demo, question, ptext, generate_length=self.max_length)
                     ptext += (' ' + new_text)
                     ptext = ptext.strip()
