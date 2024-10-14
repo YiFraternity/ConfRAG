@@ -40,8 +40,6 @@ def _get_answer_prompt_(docs: list, demo: list, question: str, text:str, reason_
         docs=doc_str,
         use_docs=ANSWER_USE_DOCS_TEMPLATE if len(docs) > 0 else '',
         use_demo=ANSWER_USE_DEMO_TEMPLATE if len(demo) > 0 else ANSWER_NOT_USE_DEMO_TEMPLATE,
-        use_continue=CONTINUE_ANSWER_TEMPLATE if len(text) > 0 else START_ANSWER_TEMPLATE,
-        use_reaoning=ANSWER_USE_REASONING if len(reason_pth) > 0 else '',
         question=question,
         reason_pth=("Reason: {}\n".format(reason_pth)) if len(reason_pth) > 0 else '',
         gen_text=text,
@@ -125,7 +123,7 @@ class BasicGenerator:
 
     def _apply_chat_template_(self, prompt, add_generation_prompt=True):
         message = [
-            {"role": "system", "content": "You are a concise assistant, please do not repeat the content of the Answer"},
+            {"role": "system", "content": "You are a concise and efficient assistant. Please proceed directly with reasoning and answering, avoiding any unrelated phrases such as 'Let me help,', 'Let’s analyze the information,', or similar expressions."},
             {"role": "user", "content": prompt}
         ]
         text = self.tokenizer.apply_chat_template(
@@ -954,9 +952,9 @@ class SeqConfidenceRAG(BasicRAG):
     def _get_seq_confs_level_(self, question:str, history_resp:str, response:str, docs:list):
 
         def __conf_level_in_confs__(confs):
-            high_conf_levels = ['very certain', 'fairly certain']
-            mid_conf_levels = ['somewhat certain']
-            low_conf_levels = ['not certain', 'very uncertain']
+            high_conf_levels = ['very certain', 'fairly certain', '1', '2']
+            mid_conf_levels = ['lightly certain', '3']
+            low_conf_levels = ['not certain', 'very uncertain', '4', '5']
             for conf_level in high_conf_levels:
                 if conf_level in confs.lower():
                     return 'high'
@@ -967,22 +965,10 @@ class SeqConfidenceRAG(BasicRAG):
                 if conf_level in confs.lower():
                     return 'low'
 
-        modify_sent = ""
-        if len(docs) == 0:
-            entities_prompt = ENTITY_REPLEACE_TEMPLATE.format(
-                sentence = response
-            )
-            modify_sent, _, _, _ = self.generator.generate(
-                entities_prompt,
-                max_new_tokens=32,
-                return_logprobs=False,
-                process_gen_text=False,
-            )
-
         conf_prompt = _get_confs_class_prompt_(
             question=question,
             history_resp=history_resp,
-            response=response if ('None' in modify_sent or modify_sent == '') else modify_sent,
+            response=response,
             docs=docs
         )
         text, confs, _, _ = self.generator.generate(
@@ -994,39 +980,50 @@ class SeqConfidenceRAG(BasicRAG):
             self.counter.add_generate(text, self.generator.tokenizer)
 
         confs = __conf_level_in_confs__(text)
-        import IPython
-        IPython.embed()
-        def __return_confs__(confs):
-            if 'high' == confs:
-                return confs, 'exact'
-            elif 'middle' == confs:
-                return confs, 'reflect'
-            else:
-                return confs, 'lack knowledge'
 
-        if modify_sent == '' or 'None' in modify_sent:   # confs is response confs
-            return __return_confs__(confs)
-        elif 'None' not in modify_sent and modify_sent != '' and confs in ['high', 'middle']:
-            return 'low', 'hallucination'
+        if confs == 'low':
+            return confs, 'hallucination'
         else:
-            # re-get response confs
-            conf_prompt = _get_confs_class_prompt_(
+            return confs, 'exact' if confs == 'high' else 'reflect'
+
+        # Todo : add perturbation
+        """
+        if confs == 'low':
+            # import IPython
+            # IPython.embed()
+            return confs, 'lack knowledge'
+        else: # Judging the confidence level of the model in response through perturbation
+            modify_sent = ""
+            modify_sent, _, _, _ = self.generator.generate(
+                ENTITY_REPLEACE_TEMPLATE.format(question=question, sentence=response),
+                max_new_tokens=32,
+                return_logprobs=False,
+                process_gen_text=False,
+            )
+            if modify_sent == '' or 'None' in modify_sent:   # confs is response confs
+                return confs, 'exact' if confs == 'high' else 'reflect'
+
+            mod_conf_prompt = _get_confs_class_prompt_(
                 question=question,
                 history_resp=history_resp,
-                response=response,
+                response=modify_sent,
                 docs=docs
             )
-            text, confs, _, _ = self.generator.generate(
-                conf_prompt,
+            text, mod_confs, _, _ = self.generator.generate(
+                mod_conf_prompt,
                 max_new_tokens=self.generate_confidence_length,
                 process_gen_text=False,
             )
+            mod_confs = __conf_level_in_confs__(text)
+            # import IPython
+            # IPython.embed()
             if self.use_counter:
                 self.counter.add_generate(text, self.generator.tokenizer)
-            import IPython
-            IPython.embed()
-            confs = __conf_level_in_confs__(text)
-            return __return_confs__(confs)
+            if mod_confs in ['high', 'mid']:
+                return 'low', 'hallucination'
+            else:
+                return confs, 'exact' if confs == 'high' else 'reflect'
+        """
 
     def _generate_(self, docs=[], demo=[], question='', ptext='', qtype='answer', generate_length=-1):
         if qtype == 'reason':
@@ -1043,8 +1040,8 @@ class SeqConfidenceRAG(BasicRAG):
         )
         if self.use_counter:
             self.counter.add_generate(text, self.generator.tokenizer)
-        import IPython
-        IPython.embed()
+        # import IPython
+        # IPython.embed()
         return text, new_text
 
     def _get_keywords_(self, addition_info):
@@ -1110,8 +1107,8 @@ class SeqConfidenceRAG(BasicRAG):
         retrieve_question = retrieve_question.strip()
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         docs = docs.tolist()
-        import IPython
-        IPython.embed()
+        # import IPython
+        # IPython.embed()
         return docs, retrieve_question
 
     def _reflection_(self, question, history_resp, response, docs=[]):
@@ -1252,7 +1249,7 @@ class SeqConfidenceRAG(BasicRAG):
         old_len = -1
         retr_num = 0
         while True:
-            _, new_text = self._generate_(docs, demo, question, ptext)
+            _, new_text = self._generate_([], demo, question, ptext)
 
             ptexts_, pconfs_, pconf_types_, hallucination = self.modifier(
                 question,
@@ -1279,6 +1276,7 @@ class SeqConfidenceRAG(BasicRAG):
                 _, new_text = self._generate_(docs=docs, question=retr_quest, qtype='reason')
                 ptexts.append(new_text)
                 ptext += (' ' + new_text)
+                # docs = []
                 """
                 if 'retr_accpt' in self.__dict__ and self.retr_accpt:
                     cur_conf = 1

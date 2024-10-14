@@ -1,20 +1,17 @@
-ANSWER_QUESTION_TEMPLETE = """{docs}Please answer the question by thinking step-by-step in fully English.{examples}{use_demo}{use_continue}
-
+ANSWER_QUESTION_TEMPLETE = """{docs}{examples}Answer the following question by reasoning step-by-step in English.{use_demo}
 ### Question: {question}
 ### Answer: {gen_text}"""
 
 ANSWER_USE_DEMO_TEMPLATE = """ And I hope you can answer the question in the same format as the examples."""
-ANSWER_NOT_USE_DEMO_TEMPLATE = """ I hope you can only provide the reasoning and answer. Please note if the Answer is sufficient to resolve the Question, immediately stop reasoning and provide the answer, starting with "So, the answer is """
+ANSWER_NOT_USE_DEMO_TEMPLATE = """ Please note if the Answer is sufficient to resolve the Question, immediately stop reasoning and provide the answer, starting with "So, the answer is"."""
 
 ANSWER_USE_DOCS_TEMPLATE = """ Please step-by-step through the process of considering what kind of knowledge is needed to answer the question. If such knowledge is present in the document, please utilize it to answer the Question. If not, please disregard the docs."""
 
-CONTINUE_ANSWER_TEMPLATE = """ If more detail is needed, continue reasoning and then provide the answer, aiming to conclude promptly once the Answer is sufficient to resolve the Question. Avoid adding any unrelated phrases, such as "Let me help," "Let's analyze the information," or similar expressions. Additionally, ensure that you trust Answer and do not repeat once the Answer has been provided."""
+# CONTINUE_ANSWER_TEMPLATE = """ If more details are needed, continue step-by-step until the answer is complete. Please continue generating the answer without repeating any previously generated content. Start from where it left off and continue reasoning to complete the remaining part."""
 
-START_ANSWER_TEMPLATE = """ And Please do not provide anything unrelated to reasoning, such as "Let's me help.", "Let's analyze the information provided", "I"d be delighted to assist!" and so on."""
-
-STEP_REASON_ANSWER_TEMPLATE = """If the document contains information relevant to the current resoning path, please respond based on that information. And If the document does not contain content related to the current resoning path, return "None".
-{docs}
-### Resoning path: {reasoning}
+STEP_REASON_ANSWER_TEMPLATE = """{docs}
+If the document contains information relevant to the question, please answer using a complete sentence based on that information. If the document does not contain content related to the current reasoning path, return the question.
+### Question: {reasoning}
 ### Answer:"""
 
 CONFIDENCE_TEMPLATE = """Confucius said, "To know what you know and to know what you do not know, that is true knowledge." I believe you have true knowledge, and I will provide you with "Context" and "Your response" which you generated base on the "Context". {docs}
@@ -25,11 +22,11 @@ Please provide your score of confidence in "Your response" to demonstrate your f
 ### Confidence:"""
 
 CONFIDENCE_CLASS_TEMPLATE = """Analyse and generate a confidence level for the "Your Response" based on the "Context". Please note provide confidence level first, and then provide an explanation. What's more, if the evidence provided is insufficient, please lower your confidence level.
-A. Very Certain
-B. Fairly Certain
-C. Lightly Certain
-D. Not Certain
-E. Very Uncertain
+[1]. Very Certain
+[2]. Fairly Certain
+[3]. Lightly Certain
+[4]. Not Certain
+[5]. Very Uncertain
 
 {docs}
 ### Context: {context}
@@ -39,9 +36,9 @@ E. Very Uncertain
 KEYWORDS_TEMPLATE = """Please use 2 to 3 keywords to express the idea behind this sentence.
 ### Sentence: {sentence}"""
 
-LACK_KNOW_INFO_TEMPLATE = """Your response lacks sufficient relevant knowledge to answer the provided question. Please think deeply and generate a relevant query based on given the Response to find the knowledge. Please do not add any entities unrelated to given the Response. Please only generate a query, do not provide any other entities.
-### Question: {question}
+LACK_KNOW_INFO_TEMPLATE = """The response doesn’t fully answer the question, possibly due to missing knowledge or errors. Please create a relevant query based on both the response and the question to find the needed information. Only generate the query, and avoid adding any extra information or entities. Try to avoid using entities from the response as much as possible.
 ### Response: {response}
+### Question: {question}
 ### Query:"""
 
 HALLUICATION_INFO_TEMPLATE = """Your response contains hallucination information. Please think step-by-step and generate a relevant query based on the Question and Response, but avoid using any Entities terms from the response.
@@ -55,7 +52,15 @@ ENTITY_TEMPLATE = """Please identify all entities in the given sentence. If ther
 ### Entities:"""
 
 
-ENTITY_REPLEACE_TEMPLATE = """Replace the entity in the following sentence with another entity of the same type (e.g., if the entity is a female movie actress, replace it with another female actress) and return the modified sentence. If there is no entity in the sentence, return 'None'.
+ENTITY_REPLEACE_TEMPLATE = """Please identify the entity in the sentence that used to answer the question (rather than an entity that appears in both the question and the sentence), and replace it with another entity of the same type. Then return the modified sentence. If no entity is found, return 'None'. Only provide the modified sentence.
+### Question: Which country's capital is Beijing?
+### Sentence: The capital of China is Beijing.
+### Modified Sentence: The capital of French is Beijing.
+### Question: Who played the lead role in the movie Forrest Gump?
+### Sentence: Tom Hanks played the lead role in the movie Forrest Gump.
+### Modified Sentence: Tim Robbins played the lead role in the movie Forrest Gump.
+===================End of Case===================
+### Question: {question}
 ### Sentence: {sentence}
 ### Modified Sentence:"""
 
