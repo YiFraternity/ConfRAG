@@ -36,14 +36,28 @@ CONFIDENCE_CLASS_TEMPLATE = """Analyse and generate a confidence level for the "
 KEYWORDS_TEMPLATE = """Please use 2 to 3 keywords to express the idea behind this sentence.
 ### Sentence: {sentence}"""
 
-LACK_KNOW_INFO_TEMPLATE = """The response doesn’t fully answer the question, possibly due to missing knowledge or errors. Please create a relevant query based on both the response and the question to find the needed information. Only generate the query, and avoid adding any extra information or entities. Try to avoid using entities from the response as much as possible.
-### Response: {response}
+LACK_KNOW_INFO_TEMPLATE = """The following response contains hallucinations. Please generate query related to the last sentence of the response, based on both the question and the response, while using the entities from the question as much as possible.
+### Question: What is the birthday of the 46th President of the United States?
+### Response: Donald John Trump is the 46th President of the United States.
+### Query: Who is the 46th President of the United States?
+### Question: Which Golden Globe Lifetime Achievement Award did the person who played the protagonist in the movie Forrest Gump win?
+### Response: Tim Robbins played the lead role in the movie Forrest Gump.
+### Query: Who played the lead role in the movie Forrest Gump?
+===================End of Case===================
 ### Question: {question}
+### Response: {response}
 ### Query:"""
 
-HALLUICATION_INFO_TEMPLATE = """Your response contains hallucination information. Please think step-by-step and generate a relevant query based on the Question and Response, but avoid using any Entities terms from the response.
-### Response: {response}
+HALLUICATION_INFO_TEMPLATE = """The following response contains hallucinations. Please generate query related to the last sentence of the response, based on both the question and the response, while using the entities from the question as much as possible.
+### Question: What is the birthday of the 46th President of the United States?
+### Response: Donald John Trump is the 46th President of the United States.
+### Query: Who is the 46th President of the United States?
+### Question: Which Golden Globe Lifetime Achievement Award did the person who played the protagonist in the movie Forrest Gump win?
+### Response: Tim Robbins played the lead role in the movie Forrest Gump.
+### Query: Who played the lead role in the movie Forrest Gump.
+===================End of Case===================
 ### Question: {question}
+### Response: {response}
 ### Query:"""
 
 ENTITY_TEMPLATE = """Please identify all entities in the given sentence. If there are no entities, respond with 'None'. If multiple entities are present, list them in the following format: 'Entity1, Entity2, Entity3'.

@@ -11,6 +11,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from examples import TUTOR_ADVICE_EXAMPLES, REFLECT_EXAMPLES
 from prompts import *
 from utils import *
+from vllm import LLM, SamplingParams
 
 
 logging.basicConfig(level=logging.INFO)
@@ -89,27 +90,12 @@ class BasicGenerator:
             if k in params:
                 self.generate_config[k] = params[k]
         if self.generate_config["do_sample"] == False:
-            del self.generate_config["top_k"]
+            self.generate_config["top_k"] = -1
+            self.generate_config['temperature'] = 0
+            self.generate_config['top_p'] = 1.0
 
     def __init__(self, model_name_or_path, params={}):
         logger.info(f"Loading model from {model_name_or_path}")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        self.model_config = AutoConfig.from_pretrained(
-            model_name_or_path,
-            trust_remote_code = "falcon" in model_name_or_path,
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name_or_path,
-            device_map="auto",
-            trust_remote_code=True,
-        ).eval()
-        if self.model_config.model_type in ["llama", "qwen2"]:
-            self.space_token = "Ġ"  # Llama3为`Ġ`，Llama2为`▁`
-        else:
-            self.space_token = self.tokenizer.tokenize(' ')[0]
-
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
 
         self.generate_config = {
             "temperature": 1.0,
@@ -120,18 +106,36 @@ class BasicGenerator:
             "do_sample": True,
         }
         self.__update_generate_config__(params)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 
-    def _apply_chat_template_(self, prompt, add_generation_prompt=True):
+        if 'use_vllm' in params and not params['use_vllm']:
+            self.model_config = AutoConfig.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=True,
+            )
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name_or_path,
+                device_map="auto",
+                trust_remote_code=True,
+            ).eval()
+            if self.model_config.model_type in ["llama", "qwen2"]:
+                self.space_token = "Ġ"  # Llama3为`Ġ`，Llama2为`▁`
+            else:
+                self.space_token = self.tokenizer.tokenize(' ')[0]
+
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.use_vllm = False
+        else:
+            self.model = LLM(model=model_name_or_path)
+            self.use_vllm = True
+
+    def _get_chat_message_(self, prompt):
         message = [
             {"role": "system", "content": "You are a concise and efficient assistant. Please proceed directly with reasoning and answering, avoiding any unrelated phrases such as 'Let me help,', 'Let’s analyze the information,', or similar expressions."},
             {"role": "user", "content": prompt}
         ]
-        text = self.tokenizer.apply_chat_template(
-            message,
-            tokenize=False,
-            add_generation_prompt=add_generation_prompt,
-        )
-        return text
+        return message
 
     def generate(
             self,
@@ -141,17 +145,6 @@ class BasicGenerator:
             gen_type="answer",
             process_gen_text=False,
         ):
-        """
-        Args:
-            gen_type (str): [`answer`, `confidence`, `advice`, `reflection`, `keywords`]
-        """
-        if self.model_config.model_type in ["llama", "qwen2"]:
-            input_text = self._apply_chat_template_(input_text)
-        input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
-        input_ids = input_ids.to(self.model.device)
-        input_length = input_ids.shape[1]
-        attention_mask = torch.ones_like(input_ids)
-
         # 对生成的内容进行一步处理
         if gen_type == 'answer':
             process_text = process_answer_text
@@ -167,44 +160,75 @@ class BasicGenerator:
             process_text = process_retr_info_text
         else:
             raise ValueError(f"gen_type {gen_type} is not supported")
-
-        if return_logprobs:
-            outputs = self.model.generate(
-                input_ids = input_ids,
-                attention_mask = attention_mask,
-                max_new_tokens = max_new_tokens,
-                return_dict_in_generate = True,
-                output_scores = True,
-                **self.generate_config,
+        """
+        Args:
+            gen_type (str): [`answer`, `confidence`, `advice`, `reflection`, `keywords`]
+        """
+        message = self._get_chat_message_(input_text)
+        if not self.use_vllm:
+            input_text = self.tokenizer.apply_chat_template(
+                message,
+                tokenize=False,
+                add_generation_prompt=True,
             )
-            transition_scores = self.model.compute_transition_scores(
-                outputs.sequences, outputs.scores, normalize_logits=True
-            )
+            input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
+            input_ids = input_ids.to(self.model.device)
+            input_length = input_ids.shape[1]
+            attention_mask = torch.ones_like(input_ids)
 
-            generated_tokens = outputs.sequences[:, input_length:]
-            text = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True) # text = "".join(tokens)
-            tokens = [self.tokenizer.decode(t, skip_special_tokens=True) for t in generated_tokens[0]]
-            special_tokens_index = [idx for idx, t in enumerate(tokens) if t == '']
-            logprobs = transition_scores[0]
-            logprobs = [p.cpu().numpy() for p in logprobs]
-            assert len(tokens) == len(logprobs)
-            tokens = [ t for idx, t in enumerate(tokens) if idx not in special_tokens_index]     # remove sepical token
-            logprobs = [p for idx, p in enumerate(logprobs) if idx not in special_tokens_index]     # remove sepical token
-            return text, tokens, logprobs
+            if return_logprobs:
+                outputs = self.model.generate(
+                    input_ids = input_ids,
+                    attention_mask = attention_mask,
+                    max_new_tokens = max_new_tokens,
+                    return_dict_in_generate = True,
+                    output_scores = True,
+                    **self.generate_config,
+                )
+                transition_scores = self.model.compute_transition_scores(
+                    outputs.sequences, outputs.scores, normalize_logits=True
+                )
 
+                generated_tokens = outputs.sequences[:, input_length:]
+                text = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True) # text = "".join(tokens)
+                tokens = [self.tokenizer.decode(t, skip_special_tokens=True) for t in generated_tokens[0]]
+                special_tokens_index = [idx for idx, t in enumerate(tokens) if t == '']
+                logprobs = transition_scores[0]
+                logprobs = [p.cpu().numpy() for p in logprobs]
+                assert len(tokens) == len(logprobs)
+                tokens = [ t for idx, t in enumerate(tokens) if idx not in special_tokens_index]     # remove sepical token
+                logprobs = [p for idx, p in enumerate(logprobs) if idx not in special_tokens_index]     # remove sepical token
+                return text, tokens, logprobs
+
+            else:
+                outputs = self.model.generate(
+                    input_ids = input_ids,
+                    attention_mask = attention_mask,
+                    max_new_tokens = max_new_tokens,
+                    **self.generate_config,
+                )
+                generated_tokens = outputs[:, input_length:]
+                text = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
         else:
-            outputs = self.model.generate(
-                input_ids = input_ids,
-                attention_mask = attention_mask,
-                max_new_tokens = max_new_tokens,
-                **self.generate_config,
+            sampling_params = SamplingParams(
+                temperature=self.generate_config['temperature'],
+                top_p=self.generate_config['top_p'],
+                top_k=self.generate_config['top_k'],
+                min_p=0.0 if self.generate_config['temperature']==0 else 1,
+                best_of=1,
+                max_tokens=max_new_tokens,
             )
-            generated_tokens = outputs[:, input_length:]
-            text = self.tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
+            outputs = self.model.chat(
+                message,
+                sampling_params=sampling_params,
+                use_tqdm=False,
+            )
+            text = outputs[0].outputs[0].text
+        if process_gen_text:
+            processed_text = process_text(text, input_text)
+        else:
             processed_text = text
-            if process_gen_text:
-                processed_text = process_text(text, input_text)
-            return text, processed_text, None, None
+        return text, processed_text, None, None
 
     def generate_attn(
             self,
@@ -214,8 +238,12 @@ class BasicGenerator:
             use_entropy = False,
             use_logprob = False,
         ):
-        if self.model_config.model_type in ["llama", "qwen2"]:
-            input_text = self._apply_chat_template_(input_text)
+        message = self._get_chat_message_(input_text)
+        input_text = self.tokenizer.apply_chat_template(
+            message,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
 
         input_ids = self.tokenizer.encode(input_text, return_tensors="pt")
         input_ids = input_ids.to(self.model.device)
@@ -980,17 +1008,14 @@ class SeqConfidenceRAG(BasicRAG):
             self.counter.add_generate(text, self.generator.tokenizer)
 
         confs = __conf_level_in_confs__(text)
-
         if confs == 'low':
-            return confs, 'hallucination'
+            return confs, 'lack knowledge'
         else:
             return confs, 'exact' if confs == 'high' else 'reflect'
 
         # Todo : add perturbation
         """
         if confs == 'low':
-            # import IPython
-            # IPython.embed()
             return confs, 'lack knowledge'
         else: # Judging the confidence level of the model in response through perturbation
             modify_sent = ""
@@ -1015,8 +1040,6 @@ class SeqConfidenceRAG(BasicRAG):
                 process_gen_text=False,
             )
             mod_confs = __conf_level_in_confs__(text)
-            # import IPython
-            # IPython.embed()
             if self.use_counter:
                 self.counter.add_generate(text, self.generator.tokenizer)
             if mod_confs in ['high', 'mid']:
@@ -1040,8 +1063,6 @@ class SeqConfidenceRAG(BasicRAG):
         )
         if self.use_counter:
             self.counter.add_generate(text, self.generator.tokenizer)
-        # import IPython
-        # IPython.embed()
         return text, new_text
 
     def _get_keywords_(self, addition_info):
@@ -1107,8 +1128,6 @@ class SeqConfidenceRAG(BasicRAG):
         retrieve_question = retrieve_question.strip()
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         docs = docs.tolist()
-        # import IPython
-        # IPython.embed()
         return docs, retrieve_question
 
     def _reflection_(self, question, history_resp, response, docs=[]):
@@ -1273,7 +1292,7 @@ class SeqConfidenceRAG(BasicRAG):
                     pre_seq = ""
                 retr_num += 1
                 docs, retr_quest = self._get_retr_docs_(question, ptexts, pre_seq, pre_seq_conf_type)
-                _, new_text = self._generate_(docs=docs, question=retr_quest, qtype='reason')
+                _, new_text = self._generate_(docs=docs, question=question)
                 ptexts.append(new_text)
                 ptext += (' ' + new_text)
                 # docs = []
