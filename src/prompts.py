@@ -1,9 +1,9 @@
-ANSWER_QUESTION_TEMPLETE = """{docs}{examples}Answer the following question by reasoning step-by-step in English.{use_demo}
-### Question: {question}
-### Answer: {gen_text}"""
+ANSWER_QUESTION_TEMPLETE = """{examples}{docs}{use_demo_start}Answer the following question by reasoning step-by-step in English{use_demo_end}
+Question: {question}
+Answer: {gen_text}"""
 
-ANSWER_USE_DEMO_TEMPLATE = """ And I hope you can answer the question in the same format as the examples."""
-ANSWER_NOT_USE_DEMO_TEMPLATE = """ Please note if the Answer is sufficient to resolve the Question, immediately stop reasoning and provide the answer, starting with "So, the answer is"."""
+ANSWER_USE_DEMO_TEMPLATE = """Answer in the same format as before. """
+ANSWER_NOT_USE_DEMO_TEMPLATE = """When the answer is sufficient to resolve the question, stop reasoning immediately and provide the answer, starting with "So, the answer is". """
 
 ANSWER_USE_DOCS_TEMPLATE = """ Please step-by-step through the process of considering what kind of knowledge is needed to answer the question. If such knowledge is present in the document, please utilize it to answer the Question. If not, please disregard the docs."""
 

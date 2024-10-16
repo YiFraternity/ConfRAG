@@ -8,6 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 from data import StrategyQA, WikiMultiHopQA, HotpotQA, IIRC
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from vllm import LLM, SamplingParams
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,9 +25,7 @@ def get_args():
     return args
 
 
-def regenerate_answer(cot, tokenizer, model, case, demo):
-    # print("##### origin #####")
-    # print(cot)
+def regenerate_answer(cot, tokenizer, model, case, demo, use_vllm=True):
     split_words = ["Question:", "#10000000", "Note:"]
     # split_words = ["Question:", "#10000000", "\n"]
     for word in split_words:
@@ -39,28 +38,33 @@ def regenerate_answer(cot, tokenizer, model, case, demo):
     cot += " So the answer is "
     prompt = "".join([d["case"]+"\n" for d in demo])
     prompt += case + " " + cot
-    input_ids = tokenizer.encode(prompt, return_tensors="pt")
-    input_ids = input_ids.to(model.device)
-    input_length = input_ids.shape[1]
-    attention_mask = torch.ones_like(input_ids)
-    outputs = model.generate(
-        input_ids = input_ids,
-        attention_mask = attention_mask,
-        max_new_tokens = 20,
-    )
-    generated_tokens = outputs[:, input_length:]
-    text = tokenizer.decode(generated_tokens[0])
-    text = cot + text.strip()
-    for word in split_words:
-        pos = text.find(word)
-        if pos != -1:
-            text = text[:pos]
-    # print("##### prompt #####")
-    # print(prompt)
-    # print("##### output #####")
-    # print(text)
-    # print("##### pred #####")
-    return text
+    if use_vllm:
+        sampling_params = SamplingParams(max_tokens=20)
+        outputs = model.generate(
+            prompt,
+            sampling_params=sampling_params,
+            use_tqdm=False,
+        )
+        text = outputs[0].outputs[0].text
+        return text
+    else:
+        input_ids = tokenizer.encode(prompt, return_tensors="pt")
+        input_ids = input_ids.to(model.device)
+        input_length = input_ids.shape[1]
+        attention_mask = torch.ones_like(input_ids)
+        outputs = model.generate(
+            input_ids = input_ids,
+            attention_mask = attention_mask,
+            max_new_tokens = 20,
+        )
+        generated_tokens = outputs[:, input_length:]
+        text = tokenizer.decode(generated_tokens[0])
+        text = cot + text.strip()
+        for word in split_words:
+            pos = text.find(word)
+            if pos != -1:
+                text = text[:pos]
+        return text
 
 
 def main():
@@ -97,10 +101,16 @@ def main():
         lines = fin.readlines()
 
     need_generate = args.dataset in ['2wikimultihopqa', "hotpotqa", "iirc", "strategyqa"]
+    use_vllm = True
     if need_generate:
         tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
-        model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, device_map="auto",
-                                                     trust_remote_code = "falcon" in args.model_name_or_path)
+        if use_vllm:
+            model = LLM(model=args.model_name_or_path)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                args.model_name_or_path, device_map="auto",
+                trust_remote_code = "falcon" in args.model_name_or_path
+            )
         demo = data.dataset[0]["demo"]
 
     pred_out = open(f"{args.output_dir}/details.txt", "w")
@@ -111,7 +121,7 @@ def main():
         pred = rd["prediction"]
         ground_truth, ground_truth_id, case = dataset[qid]
         if need_generate:
-            pred = regenerate_answer(pred, tokenizer, model, case, demo)
+            pred = regenerate_answer(pred, tokenizer, model, case, demo, use_vllm=use_vllm)
         pred = data.get_real_prediction(pred)
         # print("*****", pred)
 

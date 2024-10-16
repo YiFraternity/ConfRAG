@@ -26,21 +26,22 @@ def _get_docstr_(docs):
         doc_str += "Documents:\n"
         for i, doc in enumerate(docs):
             doc_str += f"[{i+1}] {doc}\n"
-        doc_str += ('-'*50 + '\n')
+        doc_str += ('\n')
     return doc_str
 
 def _get_answer_prompt_(docs: list, demo: list, question: str, text:str, reason_pth=''):
     doc_str = _get_docstr_(docs)
     if len(demo) > 0:
         examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
-        examples += ('-'*50 + '\n\n')
+        examples += ('\n')
     else:
         examples = ""
     prompt = ANSWER_QUESTION_TEMPLETE.format(
         examples=examples,
         docs=doc_str,
         use_docs=ANSWER_USE_DOCS_TEMPLATE if len(docs) > 0 else '',
-        use_demo=ANSWER_USE_DEMO_TEMPLATE if len(demo) > 0 else ANSWER_NOT_USE_DEMO_TEMPLATE,
+        use_demo_start=ANSWER_USE_DEMO_TEMPLATE if len(demo) > 0 else ANSWER_NOT_USE_DEMO_TEMPLATE,
+        use_demo_end=', following the example above.' if len(demo) > 0 else '.',
         question=question,
         reason_pth=("Reason: {}\n".format(reason_pth)) if len(reason_pth) > 0 else '',
         gen_text=text,
@@ -402,7 +403,9 @@ class BasicRAG:
                 topk = topk,
                 max_query_length = max_query_length,
             )
-            return docs[0]
+            separator = np.array([[' | '] * len(docs[0])])
+            result = np.char.add(np.char.add(_doc_titles, separator), docs)
+            return result[0]
         elif self.retriever_type == "SGPT":
             docs = self.retriever.retrieve(
                 queries = [query],
