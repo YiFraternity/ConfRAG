@@ -11,17 +11,17 @@ ANSWER_USE_DOCS_TEMPLATE = """ Please step-by-step through the process of consid
 
 STEP_REASON_ANSWER_TEMPLATE = """{docs}
 If the document contains information relevant to the question, please answer using a complete sentence based on that information. If the document does not contain content related to the current reasoning path, return the question.
-### Question: {reasoning}
-### Answer:"""
+- Question: {reasoning}
+- Answer:"""
 
 CONFIDENCE_TEMPLATE = """Confucius said, "To know what you know and to know what you do not know, that is true knowledge." I believe you have true knowledge, and I will provide you with "Context" and "Your response" which you generated base on the "Context". {docs}
 Please provide your score of confidence in "Your response" to demonstrate your familiarity with the relevant knowledge. Please note that the confidence is between 0 and 1, and the closer the value is to 1, the better your understanding of this knowledge. Please note that your confidence level is related to the "Your Response". Please provide confidence first, and then provide an explanation. {use_docs}
 
-### Context: {context}
-### Your Response: {response}
-### Confidence:"""
+- Context: {context}
+- Your Response: {response}
+- Confidence:"""
 
-CONFIDENCE_CLASS_TEMPLATE = """Analyse and generate a confidence level for the "Your Response" based on the "Context". Please note provide confidence level first, and then provide an explanation. What's more, if the evidence provided is insufficient, please lower your confidence level.
+CONFIDENCE_LEVEL_TEMPLATE = """Analyze the response based on the provided context and determine a confidence level. Please provide the confidence level first, followed by an explanation. Additionally, if the evidence is insufficient, adjust the confidence level downward.
 [1]. Very Certain
 [2]. Fairly Certain
 [3]. Lightly Certain
@@ -29,54 +29,59 @@ CONFIDENCE_CLASS_TEMPLATE = """Analyse and generate a confidence level for the "
 [5]. Very Uncertain
 
 {docs}
-### Context: {context}
-### Your Response: {response}
-### Confidence Level:"""
+- Context: {context}
+- Response: {response}
+- Confidence Level:"""
 
 KEYWORDS_TEMPLATE = """Please use 2 to 3 keywords to express the idea behind this sentence.
-### Sentence: {sentence}"""
+- Sentence: {sentence}"""
 
 LACK_KNOW_INFO_TEMPLATE = """The following response contains hallucinations. Please generate query related to the last sentence of the response, based on both the question and the response, while using the entities from the question as much as possible.
-### Question: What is the birthday of the 46th President of the United States?
-### Response: Donald John Trump is the 46th President of the United States.
-### Query: Who is the 46th President of the United States?
-### Question: Which Golden Globe Lifetime Achievement Award did the person who played the protagonist in the movie Forrest Gump win?
-### Response: Tim Robbins played the lead role in the movie Forrest Gump.
-### Query: Who played the lead role in the movie Forrest Gump?
+- Question: What is the birthday of the 46th President of the United States?
+- Response: Donald John Trump is the 46th President of the United States.
+- Query: Who is the 46th President of the United States?
+- Question: Which Golden Globe Lifetime Achievement Award did the person who played the protagonist in the movie Forrest Gump win?
+- Response: Tim Robbins played the lead role in the movie Forrest Gump.
+- Query: Who played the lead role in the movie Forrest Gump?
 ===================End of Case===================
-### Question: {question}
-### Response: {response}
-### Query:"""
+- Question: {question}
+- Response: {response}
+- Query:"""
 
 HALLUICATION_INFO_TEMPLATE = """The following response contains hallucinations. Please generate query related to the last sentence of the response, based on both the question and the response, while using the entities from the question as much as possible.
-### Question: What is the birthday of the 46th President of the United States?
-### Response: Donald John Trump is the 46th President of the United States.
-### Query: Who is the 46th President of the United States?
-### Question: Which Golden Globe Lifetime Achievement Award did the person who played the protagonist in the movie Forrest Gump win?
-### Response: Tim Robbins played the lead role in the movie Forrest Gump.
-### Query: Who played the lead role in the movie Forrest Gump.
+- Question: What is the birthday of the 46th President of the United States?
+- Response: Donald John Trump is the 46th President of the United States.
+- Query: Who is the 46th President of the United States?
+- Question: Which Golden Globe Lifetime Achievement Award did the person who played the protagonist in the movie Forrest Gump win?
+- Response: Tim Robbins played the lead role in the movie Forrest Gump.
+- Query: Who played the lead role in the movie Forrest Gump.
 ===================End of Case===================
-### Question: {question}
-### Response: {response}
-### Query:"""
+- Question: {question}
+- Response: {response}
+- Query:"""
+
+INIT_INFO_TEMPLATE = """Please reason-step-by step to answer the question, first considering what initial information is needed to answer the question, and generate a relevant query. Note: Only generate the query, do not include the reasoning process. Refer to the following examples:
+- Question: Which Golden Globe lifetime achievement award did the lead actor of Forrest Gump receive?
+- Query: Who is the lead actor in Forrest Gump?
+- Question: What was the profession of the founder of Amazon before founding the company?
+- Query: Who is the founder of Amazon?
+- Question: {question}
+- Query:"""
+
+MISSING_INFO_TEMPLATE = """Carefully analyze the response to identify any missing information needed to fully answer the question. Based on the missing information, generate a relevant query, starting with 'So, the query is'.
+- Question: {question}
+- Response: {response}
+- Query:"""
 
 ENTITY_TEMPLATE = """Please identify all entities in the given sentence. If there are no entities, respond with 'None'. If multiple entities are present, list them in the following format: 'Entity1, Entity2, Entity3'.
+- Sentence: {sentence}
+- Entities:"""
 
-### Sentence: {sentence}
-### Entities:"""
 
-
-ENTITY_REPLEACE_TEMPLATE = """Please identify the entity in the sentence that used to answer the question (rather than an entity that appears in both the question and the sentence), and replace it with another entity of the same type. Then return the modified sentence. If no entity is found, return 'None'. Only provide the modified sentence.
-### Question: Which country's capital is Beijing?
-### Sentence: The capital of China is Beijing.
-### Modified Sentence: The capital of French is Beijing.
-### Question: Who played the lead role in the movie Forrest Gump?
-### Sentence: Tom Hanks played the lead role in the movie Forrest Gump.
-### Modified Sentence: Tim Robbins played the lead role in the movie Forrest Gump.
-===================End of Case===================
-### Question: {question}
-### Sentence: {sentence}
-### Modified Sentence:"""
+ENTITY_REPLEACE_TEMPLATE = """Please identify the entity in the response that is used to answer the question, and replace it with another entity of the same type. Then, return the modified response. If no entity is found, return 'None'. Provide only the modified response.
+- Question: {question}
+- Response: {sentence}
+- Modified Response:"""
 
 CONFIDENCE_USE_DOCS_SUFFIX = """Above are the documents related to the "Context". """
 CONFIDENCE_USE_DOCS_PREFIX = """Below are the documents related to the "Context"."""

@@ -227,13 +227,11 @@ class StrategyQA(BaseDataset):
             if prmt in pred:
                 beg = pred.rfind(prmt) + len(prmt) + 1
                 pred = pred[beg:]
-                pred = pred.strip()
-                if 'yes' in pred[0:].lower():
-                    return "yes"
-                else:
-                    return "no"
+        pred = pred.strip()
+        if 'yes' in pred[0:].lower():
+            return "yes"
         else:
-            return ""
+            return "no"
 
 
 class WikiMultiHopQA(BaseDataset):
@@ -322,15 +320,13 @@ class WikiMultiHopQA(BaseDataset):
         if "the answer is" in pred:
             beg = pred.rfind("the answer is") + len("the answer is") + 1
             pred = pred[beg:] # delete final "."
-            if pred.endswith("</s>"):
-                pred = pred[:len(pred) - len("</s>")]
-            if pred.endswith("<|endoftext|>"):
-                pred = pred[:len(pred) - len("<|endoftext|>")]
-            if pred.endswith("."):
-                pred = pred[:-1]
-            return pred
-        else:
-            return pred
+        if pred.endswith("</s>"):
+            pred = pred[:len(pred) - len("</s>")]
+        if pred.endswith("<|endoftext|>"):
+            pred = pred[:len(pred) - len("<|endoftext|>")]
+        if pred.endswith("."):
+            pred = pred[:-1]
+        return pred
 
 
 class HotpotQA(BaseDataset):
@@ -420,15 +416,13 @@ class HotpotQA(BaseDataset):
             if prmt in pred:
                 beg = pred.rfind(prmt) + len(prmt) + 1
                 pred = pred[beg:] # delete final "."
-                if pred.endswith("</s>"):
-                    pred = pred[:len(pred) - len("</s>")]
-                if pred.endswith("<|endoftext|>"):
-                    pred = pred[:len(pred) - len("<|endoftext|>")]
-                if pred.endswith("."):
-                    pred = pred[:-1]
-                return pred
-        else:
-            return ""
+        if pred.endswith("</s>"):
+            pred = pred[:len(pred) - len("</s>")]
+        if pred.endswith("<|endoftext|>"):
+            pred = pred[:len(pred) - len("<|endoftext|>")]
+        if pred.endswith("."):
+            pred = pred[:-1]
+        return pred
 
 
 class IIRC(BaseDataset):
@@ -573,9 +567,7 @@ class IIRC(BaseDataset):
             if prmt in pred:
                 beg = pred.rfind(prmt) + len(prmt) + 1
                 pred = pred[beg:] # delete final "."
-                for stop_word in ["</s>", "<|endoftext|>", "\n", "."]:
-                    if pred.endswith(stop_word):
-                        pred = pred[:len(pred) - len(stop_word)]
-                return pred
-        else:
-            return ""
+        for stop_word in ["</s>", "<|endoftext|>", "\n", "."]:
+            if pred.endswith(stop_word):
+                pred = pred[:len(pred) - len(stop_word)]
+        return pred

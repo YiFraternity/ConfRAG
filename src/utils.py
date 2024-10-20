@@ -2,6 +2,7 @@ import re
 from typing import List
 import spacy
 nlp = spacy.load("en_core_web_sm")
+from prompts import *
 
 ANSWER_NEW_TOKEN_NUM = 2048
 
@@ -109,9 +110,9 @@ def process_keywords_text(raw_text, prompt):
 def process_retr_info_text(raw_text, prompt):
     text = raw_text
     ptns_choice = [
-        r'(?i).*?\bquery\s*[:：]\s*',
-        r'(?i).*?\bquery is',
-        r'(?i).*?\ba query is',
+        r'(?i).*?\bquery is\s*[:：]?',
+        r'(?i).*?\ba query is\s*[:：]?',
+        r'(?i).*?\bquery[:：]?',
     ]
     for ptns in ptns_choice:
         pattern = re.compile(ptns, re.DOTALL)
@@ -160,6 +161,72 @@ def is_ans_unknown(answers: List[str]) -> bool:
     if re.search(pattern, answer):
         return -1, True
     return None, False
+
+
+def get_docstr(docs):
+    doc_str = ''
+    if len(docs) > 0:
+        doc_str += "Documents:\n"
+        for i, doc in enumerate(docs):
+            doc_str += f"[{i+1}] {doc}\n"
+        doc_str += ('\n')
+    return doc_str
+
+
+def get_answer_prompt(docs: list, demo: list, question: str, text:str):
+    doc_str = get_docstr(docs)
+    if len(demo) > 0:
+        examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
+        examples += ('\n')
+    else:
+        examples = ""
+    prompt = ANSWER_QUESTION_TEMPLETE.format(
+        examples=examples,
+        docs=doc_str,
+        use_docs=ANSWER_USE_DOCS_TEMPLATE if len(docs) > 0 else '',
+        use_demo_start=ANSWER_USE_DEMO_TEMPLATE if len(demo) > 0 else ANSWER_NOT_USE_DEMO_TEMPLATE,
+        use_demo_end=', following the example above.' if len(demo) > 0 else '.',
+        question=question,
+        gen_text=text,
+    )
+    return prompt
+
+
+def get_conf_value_prompt(question:str, history_resp:str, response:str, docs:list):
+    context = question + " " + history_resp
+    doc_str = get_docstr(docs)
+    if len(docs) > 0:
+        doc_str = ('\n' + doc_str + CONFIDENCE_USE_DOCS_SUFFIX)
+    conf_prompt = CONFIDENCE_TEMPLATE.format(
+        docs=doc_str,
+        context=context,
+        response=response,
+        use_docs = CONFIDENCE_USE_DOCS if len(docs) > 0 else '',
+    )
+    return conf_prompt
+
+
+def get_conf_level_prompt(question:str, history_resp:str, response:str, docs:list):
+    context = question + " " + history_resp
+    doc_str = get_docstr(docs)
+    if len(docs) > 0:
+        doc_str = ('\n' + doc_str + CONFIDENCE_USE_DOCS_SUFFIX)
+    conf_prompt = CONFIDENCE_LEVEL_TEMPLATE.format(
+        docs=doc_str,
+        context=context,
+        response=response,
+        use_docs = CONFIDENCE_USE_DOCS if len(docs) > 0 else '',
+    )
+    return conf_prompt
+
+
+def get_reason_prompt(docs, reason_pth):
+    doc_str = get_docstr(docs)
+    reason_prompt = STEP_REASON_ANSWER_TEMPLATE.format(
+        docs=doc_str,
+        reasoning=reason_pth,
+    )
+    return reason_prompt
 
 
 if __name__ == '__main__':

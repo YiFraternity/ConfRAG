@@ -9,6 +9,9 @@ from tqdm import tqdm
 from data import StrategyQA, WikiMultiHopQA, HotpotQA, IIRC
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from vllm import LLM, SamplingParams
+from utils import (
+    get_answer_prompt,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,7 +28,7 @@ def get_args():
     return args
 
 
-def regenerate_answer(cot, tokenizer, model, case, demo, use_vllm=True):
+def regenerate_answer(cot, tokenizer, model, question, demo, use_vllm=True):
     split_words = ["Question:", "#10000000", "Note:"]
     # split_words = ["Question:", "#10000000", "\n"]
     for word in split_words:
@@ -36,17 +39,25 @@ def regenerate_answer(cot, tokenizer, model, case, demo, use_vllm=True):
         return cot
 
     cot += " So the answer is "
-    prompt = "".join([d["case"]+"\n" for d in demo])
-    prompt += case + " " + cot
+    prompt = get_answer_prompt(
+        docs=[],
+        demo=demo,
+        question=question,
+        text=cot,
+    )
+    message = [
+        {"role": "system", "content": "You are a concise and efficient assistant. Please proceed directly with reasoning and answering, avoiding any unrelated phrases such as 'Let me help,', 'Let’s analyze the information,', or similar expressions."},
+        {"role": "user", "content": prompt}
+    ]
     if use_vllm:
         sampling_params = SamplingParams(max_tokens=20)
-        outputs = model.generate(
-            prompt,
+
+        outputs = model.chat(
+            message,
             sampling_params=sampling_params,
             use_tqdm=False,
         )
         text = outputs[0].outputs[0].text
-        return text
     else:
         input_ids = tokenizer.encode(prompt, return_tensors="pt")
         input_ids = input_ids.to(model.device)
@@ -64,7 +75,7 @@ def regenerate_answer(cot, tokenizer, model, case, demo, use_vllm=True):
             pos = text.find(word)
             if pos != -1:
                 text = text[:pos]
-        return text
+    return text
 
 
 def main():
@@ -89,7 +100,7 @@ def main():
         dataset[t["qid"]] = [
             t["answer"],
             t["answer_id"] if "answer_id" in t else None,
-            t["case"] if "case" in t else None
+            t['question'] if "question" in t else None,
         ]
 
     metrics = ["EM", "F1", "Precision", "Recall"]
@@ -119,9 +130,9 @@ def main():
         rd = json.loads(line)
         qid = rd["qid"]
         pred = rd["prediction"]
-        ground_truth, ground_truth_id, case = dataset[qid]
+        ground_truth, ground_truth_id, question = dataset[qid]
         if need_generate:
-            pred = regenerate_answer(pred, tokenizer, model, case, demo, use_vllm=use_vllm)
+            pred = regenerate_answer(pred, tokenizer, model, question, demo, use_vllm=use_vllm)
         pred = data.get_real_prediction(pred)
         # print("*****", pred)
 

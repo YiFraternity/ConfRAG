@@ -19,71 +19,6 @@ logger = logging.getLogger(__name__)
 
 nlp = spacy.load("en_core_web_sm")
 
-
-def _get_docstr_(docs):
-    doc_str = ''
-    if len(docs) > 0:
-        doc_str += "Documents:\n"
-        for i, doc in enumerate(docs):
-            doc_str += f"[{i+1}] {doc}\n"
-        doc_str += ('\n')
-    return doc_str
-
-def _get_answer_prompt_(docs: list, demo: list, question: str, text:str, reason_pth=''):
-    doc_str = _get_docstr_(docs)
-    if len(demo) > 0:
-        examples = "Examples:\n" + ("".join([d["case"]+"\n" for d in demo]))
-        examples += ('\n')
-    else:
-        examples = ""
-    prompt = ANSWER_QUESTION_TEMPLETE.format(
-        examples=examples,
-        docs=doc_str,
-        use_docs=ANSWER_USE_DOCS_TEMPLATE if len(docs) > 0 else '',
-        use_demo_start=ANSWER_USE_DEMO_TEMPLATE if len(demo) > 0 else ANSWER_NOT_USE_DEMO_TEMPLATE,
-        use_demo_end=', following the example above.' if len(demo) > 0 else '.',
-        question=question,
-        reason_pth=("Reason: {}\n".format(reason_pth)) if len(reason_pth) > 0 else '',
-        gen_text=text,
-    )
-    return prompt
-
-
-def _get_conf_prompt_(question:str, history_resp:str, response:str, docs:list):
-    context = question + " " + history_resp
-    doc_str = _get_docstr_(docs)
-    if len(docs) > 0:
-        doc_str = ('\n' + doc_str + CONFIDENCE_USE_DOCS_SUFFIX)
-    conf_prompt = CONFIDENCE_TEMPLATE.format(
-        docs=doc_str,
-        context=context,
-        response=response,
-        use_docs = CONFIDENCE_USE_DOCS if len(docs) > 0 else '',
-    )
-    return conf_prompt
-
-def _get_confs_class_prompt_(question:str, history_resp:str, response:str, docs:list):
-    context = question + " " + history_resp
-    doc_str = _get_docstr_(docs)
-    if len(docs) > 0:
-        doc_str = ('\n' + doc_str + CONFIDENCE_USE_DOCS_SUFFIX)
-    conf_prompt = CONFIDENCE_CLASS_TEMPLATE.format(
-        docs=doc_str,
-        context=context,
-        response=response,
-        use_docs = CONFIDENCE_USE_DOCS if len(docs) > 0 else '',
-    )
-    return conf_prompt
-
-
-def _get_reason_prompt_(docs, reason_pth):
-    doc_str = _get_docstr_(docs)
-    reason_prompt = STEP_REASON_ANSWER_TEMPLATE.format(
-        docs=doc_str,
-        reasoning=reason_pth,
-    )
-    return reason_prompt
-
 class BasicGenerator:
 
     def __update_generate_config__(self, params):
@@ -133,7 +68,7 @@ class BasicGenerator:
 
     def _get_chat_message_(self, prompt):
         message = [
-            {"role": "system", "content": "You are a concise and efficient assistant. Please proceed directly with reasoning and answering, avoiding any unrelated phrases such as 'Let me help,', 'Let’s analyze the information,', or similar expressions."},
+            {"role": "system", "content": "You are a concise and efficient assistant. Please proceed directly with reasoning and answering, avoiding any unrelated phrases such as 'Let me help,', 'Let’s analyze the information,', or similar expressions. You must not repeat the reasoning and response in Enlish."},
             {"role": "user", "content": prompt}
         ]
         return message
@@ -336,7 +271,6 @@ class BasicGenerator:
 
         return text, seqlist, attns, seqlogprobs, seqentropies
 
-
 class Counter:
     def __init__(self):
         self.retrieve = 0
@@ -437,7 +371,7 @@ class BasicRAG:
     def inference(self, question, demo):
         # non-retrieval
         assert self.query_formulation == "direct"
-        prompt = _get_answer_prompt_([], demo=demo, question=question, text="")
+        prompt = get_answer_prompt([], demo=demo, question=question, text="")
         text, _, _, _ = self.generator.generate(
             prompt,
             max_new_tokens=self.max_length,
@@ -455,7 +389,7 @@ class SingleRAG(BasicRAG):
         assert self.query_formulation == "direct"
         docs = self.retrieve(question, topk=self.retrieve_topk)
         # 对 topk 个 passage 生成 prompt
-        prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text="")
+        prompt = get_answer_prompt(docs=docs, demo=demo, question=question, text="")
         text, _, _, _ = self.generator.generate(
             prompt,
             self.max_length,
@@ -493,7 +427,7 @@ class FixLengthRAG(BasicRAG):
         old_len = -1
         while True:
             # 对 topk 个 passage 生成 prompt
-            prompt = _get_answer_prompt_(docs=docs, demo=demo, question=question, text=ptext)
+            prompt = get_answer_prompt(docs=docs, demo=demo, question=question, text=ptext)
             text, answer, _, _ = self.generator.generate(
                 prompt,
                 self.generate_length,
@@ -527,7 +461,7 @@ class FixLengthRAG(BasicRAG):
                     ptext = ' '.join(ptexts[:-1])
                     ptext = ptext.strip()
                     docs = self._get_retr_docs_(question, ptext)
-                    prompt = _get_answer_prompt_(
+                    prompt = get_answer_prompt(
                         docs,
                         demo,
                         question,
@@ -610,7 +544,7 @@ class TokenRAG(BasicRAG):
         old_len = -1
         while True:
             docs = []
-            prompt = _get_answer_prompt_(
+            prompt = get_answer_prompt(
                 docs=docs,
                 demo=demo,
                 question=question,
@@ -639,7 +573,7 @@ class TokenRAG(BasicRAG):
                 else:
                     raise NotImplemented
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
-                prompt = _get_answer_prompt_(
+                prompt = get_answer_prompt(
                     docs = docs,
                     demo = demo,
                     question = question,
@@ -866,7 +800,7 @@ class AttnWeightRAG(BasicRAG):
         docs = []
         old_len = -1
         while True:
-            prompt = _get_answer_prompt_(
+            prompt = get_answer_prompt(
                 docs=docs,
                 demo=demo,
                 question=question,
@@ -933,7 +867,7 @@ class AttnWeightRAG(BasicRAG):
                     raise NotImplemented
 
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
-                prompt = _get_answer_prompt_(
+                prompt = get_answer_prompt(
                     docs=docs,
                     demo=demo,
                     question=question,
@@ -963,7 +897,7 @@ class SeqConfidenceRAG(BasicRAG):
         super().__init__(args)
 
     def _get_seq_confs_value_(self, question:str, history_resp:str, response:str, docs:list):
-        conf_prompt = _get_conf_prompt_(
+        conf_prompt = get_conf_value_prompt(
             question=question,
             history_resp=history_resp,
             response=response,
@@ -996,7 +930,7 @@ class SeqConfidenceRAG(BasicRAG):
                 if conf_level in confs.lower():
                     return 'low'
 
-        conf_prompt = _get_confs_class_prompt_(
+        conf_prompt = get_conf_level_prompt(
             question=question,
             history_resp=history_resp,
             response=response,
@@ -1011,51 +945,50 @@ class SeqConfidenceRAG(BasicRAG):
             self.counter.add_generate(text, self.generator.tokenizer)
 
         confs = __conf_level_in_confs__(text)
-        if confs == 'low':
-            return confs, 'lack knowledge'
-        else:
-            return confs, 'exact' if confs == 'high' else 'reflect'
-
-        # Todo : add perturbation
-        """
-        if confs == 'low':
-            return confs, 'lack knowledge'
-        else: # Judging the confidence level of the model in response through perturbation
-            modify_sent = ""
-            modify_sent, _, _, _ = self.generator.generate(
-                ENTITY_REPLEACE_TEMPLATE.format(question=question, sentence=response),
-                max_new_tokens=32,
-                return_logprobs=False,
-                process_gen_text=False,
-            )
-            if modify_sent == '' or 'None' in modify_sent:   # confs is response confs
-                return confs, 'exact' if confs == 'high' else 'reflect'
-
-            mod_conf_prompt = _get_confs_class_prompt_(
-                question=question,
-                history_resp=history_resp,
-                response=modify_sent,
-                docs=docs
-            )
-            text, mod_confs, _, _ = self.generator.generate(
-                mod_conf_prompt,
-                max_new_tokens=self.generate_confidence_length,
-                process_gen_text=False,
-            )
-            mod_confs = __conf_level_in_confs__(text)
-            if self.use_counter:
-                self.counter.add_generate(text, self.generator.tokenizer)
-            if mod_confs in ['high', 'mid']:
-                return 'low', 'hallucination'
+        if "turbulence" not in self.__dict__ or not self.turbulence:
+            if confs == 'low':
+                return confs, 'lack knowledge'
             else:
                 return confs, 'exact' if confs == 'high' else 'reflect'
-        """
+        else:
+            # Add perturbation to rejudge the confidence level of the model in response
+            if confs == 'low':
+                return confs, 'lack knowledge'
+            else:
+                turb_resp = ""
+                turb_resp, _, _, _ = self.generator.generate(
+                    ENTITY_REPLEACE_TEMPLATE.format(question=question, sentence=response),
+                    max_new_tokens=32,
+                    return_logprobs=False,
+                    process_gen_text=False,
+                )
+                if turb_resp == '' or 'None' in turb_resp:   # confs is response confs
+                    return confs, 'exact' if confs == 'high' else 'reflect'
+
+                turb_conf_prompt = get_conf_level_prompt(
+                    question=question,
+                    history_resp=history_resp,
+                    response=turb_resp,
+                    docs=docs
+                )
+                text, mod_confs, _, _ = self.generator.generate(
+                    turb_conf_prompt,
+                    max_new_tokens=self.generate_confidence_length,
+                    process_gen_text=False,
+                )
+                mod_confs = __conf_level_in_confs__(text)
+                if self.use_counter:
+                    self.counter.add_generate(text, self.generator.tokenizer)
+                if mod_confs in ['high', 'mid']:
+                    return 'low', 'hallucination'
+                else:
+                    return confs, 'exact' if confs == 'high' else 'reflect'
 
     def _generate_(self, docs=[], demo=[], question='', ptext='', qtype='answer', generate_length=-1):
         if qtype == 'reason':
-            prompt = _get_reason_prompt_(docs, reason_pth=question)
+            prompt = get_reason_prompt(docs, reason_pth=question)
         else:
-            prompt = _get_answer_prompt_(docs, demo, question, ptext)
+            prompt = get_answer_prompt(docs, demo, question, ptext)
         # 当前轮次的新文本
         text, new_text, _, _ = self.generator.generate(
             prompt,
@@ -1081,16 +1014,27 @@ class SeqConfidenceRAG(BasicRAG):
         return keywords
 
     def _get_retr_query_(self, question, response, resp_conf_type):
+        response = response.strip()
         if 'hallucination' == resp_conf_type:
-            retr_info_prompt = HALLUICATION_INFO_TEMPLATE.format(
-                question=question,
-                response=response.strip(),
-            )
+            if len(response) == 0:
+                retr_info_prompt = INIT_INFO_TEMPLATE.format(
+                    question=question,
+                )
+            else:
+                retr_info_prompt = MISSING_INFO_TEMPLATE.format(
+                    question=question,
+                    response=response.strip(),
+                )
         else:
-            retr_info_prompt = LACK_KNOW_INFO_TEMPLATE.format(
-                question=question,
-                response=response.strip(),
-            )
+            if len(response) == 0:
+                retr_info_prompt = INIT_INFO_TEMPLATE.format(
+                    question=question,
+                )
+            else:
+                retr_info_prompt = MISSING_INFO_TEMPLATE.format(
+                    question=question,
+                    response=response.strip(),
+                )
         text, retr_info, _, _ = self.generator.generate(
             retr_info_prompt,
             max_new_tokens=64,
@@ -1108,21 +1052,26 @@ class SeqConfidenceRAG(BasicRAG):
             retr_type: str [retr_query, retr_query_keywords]
         """
         history = " ".join(hist_resps).strip()
-        if self.query_formulation == "forward_all":
+        if self.query_formulation == "direct":
+            retrieve_question = question
+        elif self.query_formulation == "forward_all":
             forward_all = [question, cur_step_ptext]
             forward_all = " ".join(s for s in forward_all if len(s) > 0)
             forward_all = forward_all.replace("[xxx].", "")
             retrieve_question = forward_all
         elif self.query_formulation == "last_sentence":
-            forward_all = [question, history, cur_step_ptext]
+            forward_all = [question, history]
             forward_all = " ".join(s for s in forward_all if len(s) > 0)
-            forward_all = forward_all.replace("[xxx].", "")
             retrieve_question = forward_all
             retrieve_question = self.get_last_sentence(forward_all)
+        elif self.query_formulation == "query_and_last_sentence":
+            forward_all = [history]
+            forward_all = " ".join(s for s in forward_all if len(s) > 0)
+            retrieve_question = self.get_last_sentence(forward_all)
+            retrieve_question = question + " " + retrieve_question
         elif self.query_formulation == "generate_query":
             if retr_type == "retr_query":
-                response = history + " " + cur_step_ptext
-                retrieve_question = self._get_retr_query_(question, response, cur_ptext_conf_type)
+                retrieve_question = self._get_retr_query_(question, history, cur_ptext_conf_type)
             elif retr_type == "retr_query_keywords":
                 keywords = self._get_keywords_(cur_step_ptext, cur_ptext_conf_type)
                 retrieve_question = question + " " + keywords
@@ -1141,7 +1090,7 @@ class SeqConfidenceRAG(BasicRAG):
         """
         if self.use_counter:
             self.counter.reflect += 1
-        doc_str = _get_docstr_(docs)
+        doc_str = get_docstr(docs)
         tutor_data = {
             "header": TUTOR_ADVICE_HEADER,
             "examples": TUTOR_ADVICE_EXAMPLES,
@@ -1264,7 +1213,6 @@ class SeqConfidenceRAG(BasicRAG):
         return ptexts_, pconfs_, pconf_types_, hallucination
 
     def inference(self, question, demo):
-        demo = []
         ptext = ""     # 用于存储置信度高的序列，以及后续不可提升序列置信度的句子
         ptexts = []
         docs = []
@@ -1272,7 +1220,6 @@ class SeqConfidenceRAG(BasicRAG):
         retr_num = 0
         while True:
             _, new_text = self._generate_([], demo, question, ptext)
-
             ptexts_, pconfs_, pconf_types_, hallucination = self.modifier(
                 question,
                 ptext,
@@ -1284,18 +1231,15 @@ class SeqConfidenceRAG(BasicRAG):
                 ptexts.extend(ptexts_)
             else:
                 if len(ptexts_) > 0:
-                    # ptexts.extend(ptexts_[:-1])
-                    # ptext += (' ' + (' '.join(ptexts_[:-1])))
-                    # ptext = ptext.strip()
-                    pre_seq_conf = pconfs_[-1]
-                    pre_seq = " ".join(ptexts_)
+                    ptexts.extend(ptexts_[:-1])
+                    ptext += (' ' + (' '.join(ptexts_[:-1])))
+                    pre_seq = ptexts_[-1]
                     pre_seq_conf_type = pconf_types_[-1]
                 else:
-                    pre_seq_conf = -1
                     pre_seq = ""
                 retr_num += 1
                 docs, retr_quest = self._get_retr_docs_(question, ptexts, pre_seq, pre_seq_conf_type)
-                _, new_text = self._generate_(docs=docs, question=question)
+                _, new_text = self._generate_(docs=docs, demo=demo, question=question, ptext=ptext, generate_length=128)
                 ptexts.append(new_text)
                 ptext += (' ' + new_text)
                 # docs = []
@@ -1315,7 +1259,6 @@ class SeqConfidenceRAG(BasicRAG):
                     ptexts.append(pre_seq)
                     pconfs.append(pre_seq_conf)
                 """
-
             ptext = ptext.strip()
             cur_len = len(self.generator.tokenizer.encode(ptext)) if ptext != "" else 0
 
