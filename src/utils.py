@@ -38,6 +38,7 @@ def process_answer_text(raw_text, pre_answer):
     ptns = r'(?i).*?\banswer\s*[:：]\s*'
     pattern = re.compile(ptns, re.DOTALL)
     result = re.sub(pattern, '', text)
+    pre_answer = re.sub(pattern, '', pre_answer)
     all_texts = split_sentences(result)
     if len(all_texts) > 1:
         last_txt = all_texts[-1]
