@@ -63,7 +63,7 @@ class BasicGenerator:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             self.use_vllm = False
         else:
-            self.model = LLM(model=model_name_or_path)
+            self.model = LLM(model=model_name_or_path, max_model_len=4096)
             self.use_vllm = True
 
     def _get_chat_message_(self, prompt):
@@ -897,54 +897,48 @@ class SeqConfidenceRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
 
-    def _get_seq_confs_value_(self, question:str, history_resp:str, response:str, docs:list):
-        conf_prompt = get_conf_value_prompt(
-            question=question,
-            history_resp=history_resp,
-            response=response,
-            docs=docs
-        )
-        text, confs, _, _ = self.generator.generate(
-            conf_prompt,
-            max_new_tokens=self.generate_confidence_length,
-            return_logprobs=False,
-            gen_type='confidence',
-            process_gen_text=True,
-        )
-        if self.use_counter:
-            self.counter.add_generate(text, self.generator.tokenizer)
-        return confs
 
-    def _get_seq_confs_level_(self, question:str, history_resp:str, response:str, docs:list):
+    def _get_seq_confs_level_(self, question:str, history_resp:str, response:str, docs:list, conf_type='value'):
 
         def __conf_level_in_confs__(confs):
-            high_conf_levels = ['very certain', 'fairly certain', '1', '2']
-            mid_conf_levels = ['lightly certain', '3']
-            low_conf_levels = ['not certain', 'very uncertain', '4', '5']
-            for conf_level in high_conf_levels:
-                if conf_level in confs.lower():
+            if conf_type == 'value':
+                if confs >= self.reflection_threshold:
                     return 'high'
-            for conf_level in mid_conf_levels:
-                if conf_level in confs.lower():
+                elif confs >= self.hallucination_threshold:
                     return 'mid'
-            for conf_level in low_conf_levels:
-                if conf_level in confs.lower():
+                else:
                     return 'low'
+            else:
+                high_conf_levels = ['very certain', 'fairly certain', '1', '2']
+                mid_conf_levels = ['lightly certain', '3']
+                low_conf_levels = ['not certain', 'very uncertain', '4', '5']
+                for conf_level in high_conf_levels:
+                    if conf_level in confs.lower():
+                        return 'high'
+                for conf_level in mid_conf_levels:
+                    if conf_level in confs.lower():
+                        return 'mid'
+                for conf_level in low_conf_levels:
+                    if conf_level in confs.lower():
+                        return 'low'
 
-        conf_prompt = get_conf_level_prompt(
+        conf_prompt = get_conf_prompt(
             question=question,
             history_resp=history_resp,
             response=response,
-            docs=docs
+            docs=docs,
+            conf_type=conf_type,
         )
         text, confs, _, _ = self.generator.generate(
             conf_prompt,
             max_new_tokens=self.generate_confidence_length,
-            process_gen_text=False,
+            gen_type='confidence',
+            process_gen_text=True if conf_type == 'value' else False,
         )
         if self.use_counter:
             self.counter.add_generate(text, self.generator.tokenizer)
-
+        if conf_type == 'value':
+            text = confs
         confs = __conf_level_in_confs__(text)
         if "turbulence" not in self.__dict__ or not self.turbulence:
             if confs == 'low':
@@ -966,11 +960,12 @@ class SeqConfidenceRAG(BasicRAG):
                 if turb_resp == '' or 'None' in turb_resp:   # confs is response confs
                     return confs, 'exact' if confs == 'high' else 'reflect'
 
-                turb_conf_prompt = get_conf_level_prompt(
+                turb_conf_prompt = get_conf_prompt(
                     question=question,
                     history_resp=history_resp,
                     response=turb_resp,
-                    docs=docs
+                    docs=docs,
+                    conf_type=conf_type,
                 )
                 text, mod_confs, _, _ = self.generator.generate(
                     turb_conf_prompt,
@@ -1135,26 +1130,20 @@ class SeqConfidenceRAG(BasicRAG):
         return reflect
 
     def _get_confs_class_(self, question, history_resp, sent, docs):
-        confs_class = self.confs_class if "confs_class" in self.__dict__ else 'value'
-        if confs_class == 'value':
-            confs, = self._get_seq_confs_value_(question, history_resp, sent, docs)
-        else:
-            confs, conf_type = self._get_seq_confs_level_(question, history_resp, sent, docs)
+        confs_type = self.confs_class if "confs_class" in self.__dict__ else 'value'
+        confs, conf_type = self._get_seq_confs_level_(question, history_resp, sent, docs, confs_type)
 
         confs_value = 0
-        if self.reflection_threshold < 0:  # no reflect
-            if (confs_class == 'value' and confs >= self.hallucination_threshold) or \
-            (confs_class=='level' and confs=='high'):
+        if "use_reflect" not in self.__dict__ or not self.use_reflect:  # no reflect
+            if confs=='high':
                 confs_value = 1
             else:
                 confs_value = -1
             return confs_value, conf_type
 
-        if (confs_class == 'value' and confs >= self.reflection_threshold) or \
-            (confs_class == 'level' and confs=='high'):
+        if confs=='high':
             confs_value = 1
-        elif (confs_class == 'value' and confs < self.hallucination_threshold) or \
-            (confs_class == 'level' and confs=='low'):
+        elif confs=='low':
             confs_value = -1
         else:
             confs_value = 0
