@@ -12,9 +12,9 @@
     "repetition_penalty": 1.2,
     "generate_length": 64,
     "max_length": 256,
-    "query_formulation": "direct",
-    "output_dir": "results/FL-RAG/Qwen2.5-7B-Instruct/hotpotqa",
-    "retriever": "BGEReranker",
+    "query_formulation": "last_sentence",
+    "output_dir": "results/Qwen2.5-7B-Instruct/FL-RAG/hotpotqa",
+    "retriever": "BM25",
     "es_index_name": "wiki",
     "retrieve_topk": 3,
     "use_counter": true

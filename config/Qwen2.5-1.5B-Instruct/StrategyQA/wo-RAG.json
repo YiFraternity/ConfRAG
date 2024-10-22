@@ -11,7 +11,7 @@
     "repetition_penalty": 1.2,
     "max_length": 256,
     "query_formulation": "direct",
-    "output_dir": "results/wo-RAG/Qwen2.5-1.5B-Instruct/strategyqa",
+    "output_dir": "results/Qwen2.5-1.5B-Instruct/wo-RAG/strategyqa",
     "es_index_name": "wiki",
     "use_counter": true
 }

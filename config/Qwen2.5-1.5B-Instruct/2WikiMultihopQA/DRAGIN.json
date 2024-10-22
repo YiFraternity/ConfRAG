@@ -14,7 +14,7 @@
     "max_length": 256,
     "query_formulation": "real_words",
     "retrieve_keep_top_k": 25,
-    "output_dir": "results/dragin/Qwen2.5-1.5B-Instruct/2wikimultihopqa",
+    "output_dir": "results/Qwen2.5-1.5B-Instruct/dragin/2wikimultihopqa",
     "retriever": "BGEReranker",
     "es_index_name": "wiki",
     "retrieve_topk": 3,

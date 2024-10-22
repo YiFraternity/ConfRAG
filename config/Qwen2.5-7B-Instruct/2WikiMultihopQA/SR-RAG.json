@@ -12,8 +12,8 @@
     "repetition_penalty": 1.2,
     "max_length": 256,
     "query_formulation": "direct",
-    "output_dir": "calibration/results/SR-RAG/Qwen2.5-7B-Instruct/2wikimultihopqa",
-    "retriever": "BGEReranker",
+    "output_dir": "results/Qwen2.5-7B-Instruct/SR-RAG/2wikimultihopqa",
+    "retriever": "BM25",
     "es_index_name": "wiki",
     "retrieve_topk": 3,
     "use_counter": true

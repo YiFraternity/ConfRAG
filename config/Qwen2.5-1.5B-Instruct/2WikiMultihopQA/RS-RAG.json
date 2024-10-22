@@ -13,7 +13,7 @@
     "generate_length": 128,
     "max_length": 256,
     "query_formulation": "forward_all",
-    "output_dir": "results/RS-RAG/Qwen2.5-1.5B-Instruct/2wikimultihopqa",
+    "output_dir": "results/Qwen2.5-1.5B-Instruct/RS-RAG/2wikimultihopqa",
     "retriever": "BGEReranker",
     "es_index_name": "wiki",
     "retrieve_topk": 3,

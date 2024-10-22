@@ -13,7 +13,7 @@
     "generate_length": 64,
     "max_length": 256,
     "query_formulation": "forward_all",
-    "output_dir": "results/FS-RAG/Qwen2.5-1.5B-Instruct/strategyqa",
+    "output_dir": "results/Qwen2.5-1.5B-Instruct/FS-RAG/strategyqa",
     "retriever": "BGEReranker",
     "es_index_name": "wiki",
     "retrieve_topk": 3,

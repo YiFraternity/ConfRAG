@@ -12,7 +12,7 @@
     "repetition_penalty": 1.2,
     "max_length": 256,
     "query_formulation": "direct",
-    "output_dir": "results/SR-RAG/Qwen2.5-1.5B-Instruct/strategyqa",
+    "output_dir": "results/Qwen2.5-1.5B-Instruct/SR-RAG/strategyqa",
     "retriever": "BGEReranker",
     "es_index_name": "wiki",
     "retrieve_topk": 3,

@@ -12,9 +12,9 @@
     "repetition_penalty": 1.2,
     "generate_length": 128,
     "max_length": 256,
-    "query_formulation": "forward_all",
-    "output_dir": "results/RS-RAG/Qwen2.5-7B-Instruct/2wikimultihopqa",
-    "retriever": "BGEReranker",
+    "query_formulation": "last_sentence",
+    "output_dir": "results/Qwen2.5-7B-Instruct/RS-RAG/2wikimultihopqa",
+    "retriever": "BM25",
     "es_index_name": "wiki",
     "retrieve_topk": 3,
     "use_counter": true

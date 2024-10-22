@@ -13,7 +13,7 @@
     "generate_length": 64,
     "max_length": 256,
     "query_formulation": "direct",
-    "output_dir": "results/FL-RAG/Qwen2.5-1.5B-Instruct/hotpotqa",
+    "output_dir": "results/Qwen2.5-1.5B-Instruct/FL-RAG/hotpotqa",
     "retriever": "BGEReranker",
     "es_index_name": "wiki",
     "retrieve_topk": 3,

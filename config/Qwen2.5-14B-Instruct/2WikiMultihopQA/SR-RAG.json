@@ -1,6 +1,5 @@
 {
     "model_name_or_path": "/home/yhliu/models/open_models/qwen/Qwen2.5-14B-Instruct",
-    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
     "method": "single-retrieval",
     "dataset": "2wikimultihopqa",
     "data_path": "data/2wikimultihopqa",
@@ -12,8 +11,8 @@
     "repetition_penalty": 1.2,
     "max_length": 256,
     "query_formulation": "direct",
-    "output_dir": "calibration/results/SR-RAG/Qwen2.5-14B-Instruct/2wikimultihopqa",
-    "retriever": "BGEReranker",
+    "output_dir": "results/Qwen2.5-14B-Instruct/SR-RAG/2wikimultihopqa",
+    "retriever": "BM25",
     "es_index_name": "wiki",
     "retrieve_topk": 3,
     "use_counter": true
