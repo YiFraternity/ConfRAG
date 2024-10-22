@@ -849,6 +849,7 @@ class AttnWeightRAG(BasicRAG):
 
                 elif self.query_formulation == "last_sentence":
                     retrieve_question = self.get_last_sentence(forward_all)
+                    retrieve_question = retrieve_question.strip()
                     if len(retrieve_question) == 0:
                         retrieve_question = question
 
