@@ -1,6 +1,6 @@
 {
-    "model_name_or_path": "/home/yhliu/models/open_models/qwen/Qwen2.5-7B-Instruct",
-    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
+    "model_name_or_path": "/home/share/models/modelscope/qwen/Qwen2.5-7B-Instruct",
+    "bge_model_name_or_path": "/home/share/models/modelscope/bge/bge-reranker-base",
     "method": "seq_confidence",
     "dataset": "hotpotqa",
     "data_path": "data/hotpotqa",
@@ -15,7 +15,7 @@
     "max_length": 256,
     "max_retrieve": 3,
     "query_formulation": "query_and_last_sentence",
-    "output_dir": "results/Qwen2.5-7B-Instruct/SeqLevelNoReft/query_and_last_sentence_turb/hotpotqa",
+    "output_dir": "results/Qwen2.5-7B-Instruct/SeqValueNoReft/query_and_last_sentence_turb/hotpotqa",
     "retriever": "BM25",
     "es_index_name": "wiki",
     "retrieve_topk": 3,

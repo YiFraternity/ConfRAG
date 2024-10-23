@@ -1,6 +1,6 @@
 {
-    "model_name_or_path": "/home/yhliu/models/open_models/qwen/Qwen2.5-14B-Instruct",
-    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
+    "model_name_or_path": "/home/share/models/modelscope/qwen/Qwen2.5-14B-Instruct",
+    "bge_model_name_or_path": "/home/share/models/modelscope/bge/bge-reranker-base",
     "method": "dragin",
     "dataset": "2wikimultihopqa",
     "data_path": "data/2wikimultihopqa",
@@ -15,7 +15,7 @@
     "query_formulation": "real_words",
     "retrieve_keep_top_k": 25,
     "output_dir": "results/dragin/Qwen2.5-14B-Instruct/2wikimultihopqa",
-    "retriever": "BGEReranker",
+    "retriever": "BM25",
     "es_index_name": "wiki",
     "retrieve_topk": 3,
     "hallucination_threshold": 1.0,

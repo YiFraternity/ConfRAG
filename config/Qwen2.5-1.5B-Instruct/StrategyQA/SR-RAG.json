@@ -1,6 +1,6 @@
 {
-    "model_name_or_path": "/home/yhliu/models/open_models/qwen/Qwen2.5-1.5B-Instruct",
-    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
+    "model_name_or_path": "/home/share/models/modelscope/qwen/Qwen2.5-1.5B-Instruct",
+    "bge_model_name_or_path": "/home/share/models/modelscope/bge/bge-reranker-base",
     "method": "single-retrieval",
     "dataset": "strategyqa",
     "data_path": "data/strategyqa",
@@ -13,7 +13,7 @@
     "max_length": 256,
     "query_formulation": "direct",
     "output_dir": "results/Qwen2.5-1.5B-Instruct/SR-RAG/strategyqa",
-    "retriever": "BGEReranker",
+    "retriever": "BM25",
     "es_index_name": "wiki",
     "retrieve_topk": 3,
     "use_counter": true

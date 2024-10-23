@@ -412,9 +412,10 @@ class FixLengthRAG(BasicRAG):
             retrieve_question = " ".join(s for s in tmp_all if len(s) > 0)
             retrieve_question = retrieve_question.strip()
             retrieve_question = self.get_last_sentence(retrieve_question)
-            if len(retrieve_question) == 0:
-                retrieve_question = question
         else:
+            retrieve_question = question
+
+        if len(retrieve_question) < 5:
             retrieve_question = question
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         docs = docs.tolist()
@@ -572,6 +573,10 @@ class TokenRAG(BasicRAG):
                     retrieve_question = self.get_last_sentence(txt)
                 else:
                     raise NotImplemented
+
+                retrieve_question = retrive_question.strip()
+                if len(retrieve_question) < 5:
+                    retrieve_question = question
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
                 prompt = get_answer_prompt(
                     docs = docs,
@@ -850,8 +855,6 @@ class AttnWeightRAG(BasicRAG):
                 elif self.query_formulation == "last_sentence":
                     retrieve_question = self.get_last_sentence(forward_all)
                     retrieve_question = retrieve_question.strip()
-                    if len(retrieve_question) == 0:
-                        retrieve_question = question
 
                 elif self.query_formulation == "last_n_tokens":
                     assert "retrieve_keep_top_k" in self.__dict__
@@ -867,6 +870,8 @@ class AttnWeightRAG(BasicRAG):
                 else:
                     raise NotImplemented
 
+                if len(retrieve_question) < 5:
+                    retrieve_question = question
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
                 prompt = get_answer_prompt(
                     docs=docs,
@@ -896,7 +901,6 @@ class AttnWeightRAG(BasicRAG):
 class SeqConfidenceRAG(BasicRAG):
     def __init__(self, args):
         super().__init__(args)
-
 
     def _get_seq_confs_level_(self, question:str, history_resp:str, response:str, docs:list, conf_type='value'):
 
@@ -937,18 +941,16 @@ class SeqConfidenceRAG(BasicRAG):
         )
         if self.use_counter:
             self.counter.add_generate(text, self.generator.tokenizer)
-        if conf_type == 'value':
-            text = confs
-        confs = __conf_level_in_confs__(text)
+        conf_level = __conf_level_in_confs__(confs if conf_type == 'value' else text)
         if "turbulence" not in self.__dict__ or not self.turbulence:
-            if confs == 'low':
-                return confs, 'lack knowledge'
+            if conf_level == 'low':
+                return conf_level, 'lack knowledge'
             else:
-                return confs, 'exact' if confs == 'high' else 'reflect'
+                return conf_level, 'exact' if conf_level == 'high' else 'reflect'
         else:
             # Add perturbation to rejudge the confidence level of the model in response
-            if confs == 'low':
-                return confs, 'lack knowledge'
+            if conf_level == 'low':
+                return conf_level, 'lack knowledge'
             else:
                 turb_resp = ""
                 turb_resp, _, _, _ = self.generator.generate(
@@ -958,7 +960,7 @@ class SeqConfidenceRAG(BasicRAG):
                     process_gen_text=False,
                 )
                 if turb_resp == '' or 'None' in turb_resp:   # confs is response confs
-                    return confs, 'exact' if confs == 'high' else 'reflect'
+                    return conf_level, 'exact' if conf_level == 'high' else 'reflect'
 
                 turb_conf_prompt = get_conf_prompt(
                     question=question,
@@ -970,15 +972,16 @@ class SeqConfidenceRAG(BasicRAG):
                 text, mod_confs, _, _ = self.generator.generate(
                     turb_conf_prompt,
                     max_new_tokens=self.generate_confidence_length,
-                    process_gen_text=False,
+                    gen_type='confidence',
+                    process_gen_text=True if conf_type == 'value' else False,
                 )
-                mod_confs = __conf_level_in_confs__(text)
+                mod_confs = __conf_level_in_confs__(mod_confs if conf_type == 'value' else text)
                 if self.use_counter:
                     self.counter.add_generate(text, self.generator.tokenizer)
                 if mod_confs in ['high', 'mid']:
                     return 'low', 'hallucination'
                 else:
-                    return confs, 'exact' if confs == 'high' else 'reflect'
+                    return conf_level, 'exact' if conf_level == 'high' else 'reflect'
 
     def _generate_(self, docs=[], demo=[], question='', ptext='', qtype='answer', generate_length=-1):
         if qtype == 'reason':
@@ -1073,7 +1076,10 @@ class SeqConfidenceRAG(BasicRAG):
                 retrieve_question = question + " " + keywords
         else:
             raise NotImplemented
+
         retrieve_question = retrieve_question.strip()
+        if len(retrieve_question) < 5:
+            retrieve_question = question
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         docs = docs.tolist()
         return docs, retrieve_question
@@ -1131,19 +1137,19 @@ class SeqConfidenceRAG(BasicRAG):
 
     def _get_confs_class_(self, question, history_resp, sent, docs):
         confs_type = self.confs_class if "confs_class" in self.__dict__ else 'value'
-        confs, conf_type = self._get_seq_confs_level_(question, history_resp, sent, docs, confs_type)
+        conf_level, conf_type = self._get_seq_confs_level_(question, history_resp, sent, docs, confs_type)
 
         confs_value = 0
         if "use_reflect" not in self.__dict__ or not self.use_reflect:  # no reflect
-            if confs=='high':
+            if conf_level=='high':
                 confs_value = 1
             else:
                 confs_value = -1
             return confs_value, conf_type
 
-        if confs=='high':
+        if conf_level=='high':
             confs_value = 1
-        elif confs=='low':
+        elif conf_level=='low':
             confs_value = -1
         else:
             confs_value = 0
