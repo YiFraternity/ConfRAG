@@ -574,7 +574,7 @@ class TokenRAG(BasicRAG):
                 else:
                     raise NotImplemented
 
-                retrieve_question = retrive_question.strip()
+                retrieve_question = retrieve_question.strip()
                 if len(retrieve_question) < 5:
                     retrieve_question = question
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)

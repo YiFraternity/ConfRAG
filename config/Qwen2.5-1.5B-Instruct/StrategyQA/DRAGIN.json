@@ -1,6 +1,6 @@
 {
-    "model_name_or_path": "/home/share/models/modelscope/qwen/Qwen2.5-1.5B-Instruct",
-    "bge_model_name_or_path": "/home/share/models/modelscope/bge/bge-reranker-base",
+    "model_name_or_path": "/group_homes/our_llm_domain/home/share/open_models/qwen/Qwen2.5-1.5B-Instruct",
+    "bge_model_name_or_path": "/group_homes/our_llm_domain/home/share/open_models/bge/bge-reranker-base",
     "method": "dragin",
     "dataset": "strategyqa",
     "data_path": "data/strategyqa",
@@ -20,5 +20,6 @@
     "retrieve_topk": 3,
     "hallucination_threshold": 1.0,
     "check_real_words": true,
-    "use_counter": true
+    "use_counter": true,
+    "use_vllm": false
 }
