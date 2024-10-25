@@ -12,7 +12,7 @@
     "repetition_penalty": 1.2,
     "generate_length": 64,
     "max_length": 256,
-    "query_formulation": "real_words",
+    "query_formulation": "last_sentence",
     "retrieve_keep_top_k": 25,
     "output_dir": "results/dragin/Qwen2.5-7B-Instruct/2wikimultihopqa",
     "retriever": "BM25",

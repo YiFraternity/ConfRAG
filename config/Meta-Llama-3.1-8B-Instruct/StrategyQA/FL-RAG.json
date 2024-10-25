@@ -1,0 +1,21 @@
+{
+    "model_name_or_path": "/home/yhliu/models/open_models/llama/Meta-Llama-3.1-8B-Instruct",
+    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
+    "method": "fix-length-retrieval",
+    "dataset": "strategyqa",
+    "data_path": "data/strategyqa",
+    "fewshot": 6,
+    "sample": 1000,
+    "shuffle": false,
+    "num_beams": 1,
+    "do_sample": false,
+    "repetition_penalty": 1.2,
+    "generate_length": 64,
+    "max_length": 256,
+    "query_formulation": "last_sentence",
+    "output_dir": "results/Meta-Llama-3.1-8B-Instruct/FL-RAG/strategyqa",
+    "retriever": "BM25",
+    "es_index_name": "wiki",
+    "retrieve_topk": 3,
+    "use_counter": true
+}

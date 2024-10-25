@@ -1,6 +1,6 @@
 {
-    "model_name_or_path": "/home/share/models/modelscope/qwen/Qwen2.5-14B-Instruct",
-    "bge_model_name_or_path": "/home/share/models/modelscope/bge/bge-reranker-base",
+    "model_name_or_path": "/home/yhliu/models/open_models/qwen/Qwen2.5-14B-Instruct",
+    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
     "method": "random-sentence-retrieval",
     "dataset": "2wikimultihopqa",
     "data_path": "data/2wikimultihopqa",
