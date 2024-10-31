@@ -81,6 +81,10 @@ class BasicGenerator:
             gen_type="answer",
             process_gen_text=False,
         ):
+        """
+        Args:
+            gen_type (str): [`answer`, `confidence`, `advice`, `reflection`, `keywords`]
+        """
         # 对生成的内容进行一步处理
         if gen_type == 'answer':
             process_text = process_answer_text
@@ -96,10 +100,6 @@ class BasicGenerator:
             process_text = process_retr_info_text
         else:
             raise ValueError(f"gen_type {gen_type} is not supported")
-        """
-        Args:
-            gen_type (str): [`answer`, `confidence`, `advice`, `reflection`, `keywords`]
-        """
         message = self._get_chat_message_(input_text)
         if not self.use_vllm:
             input_text = self.tokenizer.apply_chat_template(
@@ -415,7 +415,7 @@ class FixLengthRAG(BasicRAG):
         else:
             retrieve_question = question
 
-        if len(retrieve_question) < 5:
+        if len(retrieve_question.split()) < 5:
             retrieve_question = question
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         docs = docs.tolist()
@@ -575,7 +575,7 @@ class TokenRAG(BasicRAG):
                     raise NotImplemented
 
                 retrieve_question = retrieve_question.strip()
-                if len(retrieve_question) < 5:
+                if len(retrieve_question.split()) < 5:
                     retrieve_question = question
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
                 prompt = get_answer_prompt(
@@ -587,6 +587,8 @@ class TokenRAG(BasicRAG):
                 text, new_text, _, _ = self.generator.generate(
                     prompt,
                     self.generate_length,
+                    return_logprobs=False,
+                    process_gen_text=True,
                 )
                 if self.use_counter == True:
                     self.counter.add_generate(text, self.generator.tokenizer)
@@ -870,7 +872,7 @@ class AttnWeightRAG(BasicRAG):
                 else:
                     raise NotImplemented
 
-                if len(retrieve_question) < 5:
+                if len(retrieve_question.split()) < 5:
                     retrieve_question = question
                 docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
                 prompt = get_answer_prompt(
@@ -1078,7 +1080,7 @@ class SeqConfidenceRAG(BasicRAG):
             raise NotImplemented
 
         retrieve_question = retrieve_question.strip()
-        if len(retrieve_question) < 5:
+        if len(retrieve_question.split()) < 5:
             retrieve_question = question
         docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
         docs = docs.tolist()
