@@ -417,8 +417,10 @@ class FixLengthRAG(BasicRAG):
 
         if len(retrieve_question.split()) < 5:
             retrieve_question = question
-        docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
-        docs = docs.tolist()
+        try:
+            docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+        except:
+            docs = []
         return docs
 
     def inference(self, question, demo):
@@ -577,7 +579,10 @@ class TokenRAG(BasicRAG):
                 retrieve_question = retrieve_question.strip()
                 if len(retrieve_question.split()) < 5:
                     retrieve_question = question
-                docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+                try:
+                    docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+                except:
+                    docs = []
                 prompt = get_answer_prompt(
                     docs = docs,
                     demo = demo,
@@ -874,7 +879,10 @@ class AttnWeightRAG(BasicRAG):
 
                 if len(retrieve_question.split()) < 5:
                     retrieve_question = question
-                docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+                try:
+                    docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+                except:
+                    docs = []
                 prompt = get_answer_prompt(
                     docs=docs,
                     demo=demo,
@@ -1082,8 +1090,10 @@ class SeqConfidenceRAG(BasicRAG):
         retrieve_question = retrieve_question.strip()
         if len(retrieve_question.split()) < 5:
             retrieve_question = question
-        docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
-        docs = docs.tolist()
+        try:
+            docs = self.retrieve(retrieve_question, topk=self.retrieve_topk)
+        except:
+            docs = []
         return docs, retrieve_question
 
     def _reflection_(self, question, history_resp, response, docs=[]):
