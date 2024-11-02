@@ -339,7 +339,7 @@ class BasicRAG:
             )
             separator = np.array([[' | '] * len(docs[0])])
             result = np.char.add(np.char.add(_doc_titles, separator), docs)
-            return result[0]
+            return result[0].tolist()
         elif self.retriever_type == "SGPT":
             docs = self.retriever.retrieve(
                 queries = [query],
