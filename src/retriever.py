@@ -53,6 +53,7 @@ class BM25:
             # truncate/pad on the left side
             self.tokenizer.padding_side = 'left'
             self.tokenizer.truncation_side = 'left'
+            self.tokenizer.pad_token = self.tokenizer.eos_token if self.tokenizer.pad_token is None else self.tokenizer.pad_token
             tokenized = self.tokenizer(
                 queries,
                 truncation=True,
