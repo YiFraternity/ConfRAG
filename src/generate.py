@@ -442,17 +442,15 @@ class FixLengthRAG(BasicRAG):
                 # fix sentence
                 sentences = list(nlp(answer).sents)
                 sentences = [str(sent).strip() for sent in sentences]
-                if len(sentences) == 0:
-                    break
-                answer = sentences[0]
+                answer = sentences[0] if len(sentences) > 0 else ""
                 ptexts.append(answer)
             if self.method == "random-sentence-retrieval":
                 sentences = list(nlp(answer).sents)
                 sentences = [str(sent).strip() for sent in sentences]
-                if len(sentences) == 0:
-                    break
-                first_n = random.randint(1, len(sentences))
-                first_n_sents = sentences[:first_n]
+                first_n_sents = ''
+                if len(sentences) > 1:
+                    first_n = random.randint(1, len(sentences))
+                    first_n_sents = sentences[:first_n]
                 answer = ' '.join(first_n_sents)
                 ptexts.extend(first_n_sents)
             ptext += (" " + answer.strip())
@@ -460,7 +458,7 @@ class FixLengthRAG(BasicRAG):
             # 判断 token 的个数要少于 max_length
             tokens_count = len(self.generator.tokenizer.encode(ptext))
             if tokens_count >= self.max_length or tokens_count <= old_len or "the answer is" in ptext:
-                if len(ptexts)==0 or is_ans_unknown(ptexts[-1]):
+                if len(ptexts)==0 or is_ans_unknown(ptexts):
                     ptext = ' '.join(ptexts[:-1])
                     ptext = ptext.strip()
                     docs = self._get_retr_docs_(question, ptext)
@@ -483,7 +481,7 @@ class FixLengthRAG(BasicRAG):
             old_len = tokens_count
 
             docs = self._get_retr_docs_(question, ptext)
-        return text
+        return ptext
 
 
 class TokenRAG(BasicRAG):
