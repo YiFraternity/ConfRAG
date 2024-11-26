@@ -1,7 +1,7 @@
 {
     "model_name_or_path": "/home/yhliu/models/open_models/qwen/Qwen2.5-7B-Instruct",
     "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
-    "method": "token",
+    "method": "seq_confidence",
     "dataset": "hotpotqa",
     "data_path": "data/hotpotqa",
     "fewshot": 8,
@@ -10,14 +10,19 @@
     "num_beams": 1,
     "do_sample": false,
     "repetition_penalty": 1.2,
+    "generate_confidence_length": 10,
     "generate_length": 64,
     "max_length": 256,
+    "max_retrieve": 3,
     "query_formulation": "last_sentence",
-    "output_dir": "results/Qwen2.5-7B-Instruct/FLARE/hotpotqa",
-    "retriever": "BM25",
+    "output_dir": "results/Qwen2.5-7B-Instruct/SeqLevelNoReft/last_sentence/hotpotqa",
+    "retriever": "BGEReranker",
     "es_index_name": "wiki",
     "retrieve_topk": 3,
-    "hallucination_threshold": 0.1,
+    "reflection_threshold": 0.8,
+    "hallucination_threshold": 0.6,
     "use_counter": true,
-    "use_vllm": false
+    "confs_class": "level",
+    "turbulence": false,
+    "use_reflect": false
 }

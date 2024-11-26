@@ -45,7 +45,7 @@ Use Elasticsearch to index the Wikipedia dump:
 cd data
 wget -O elasticsearch-7.17.9.tar.gz https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.17.9-linux-x86_64.tar.gz  # download Elasticsearch
 tar zxvf elasticsearch-7.17.9.tar.gz
-rm elasticsearch-7.17.9.tar.gz 
+rm elasticsearch-7.17.9.tar.gz
 cd elasticsearch-7.17.9
 nohup bin/elasticsearch &  # run Elasticsearch in background
 cd ../..
@@ -64,7 +64,7 @@ For StrategyQA:
 wget -O data/strategyqa_dataset.zip https://storage.googleapis.com/ai2i/strategyqa/data/strategyqa_dataset.zip
 mkdir -p data/strategyqa
 unzip data/strategyqa_dataset.zip -d data/strategyqa
-rm data/strategyqa_dataset.zip 
+rm data/strategyqa_dataset.zip
 ```
 
 For HotpotQA:
@@ -129,7 +129,7 @@ Here is the config file for using our approach to generate answers to the top 10
     "dataset": "2wikimultihopqa",
     "data_path": "../data/2wikimultihopqa",
     "generate_max_length": 64,
-    "query_formulation": "real_words",
+    "query_formulation": "last_sentence",
     "retrieve_keep_top_k": 40,
     "output_dir": "../result/2wikimultihopqa_llama2_13b",
     "retriever": "BM25",
@@ -178,12 +178,12 @@ The elements in `output.txt` are as follows:
 
 ```json
 {
-    "qid": "question id", 
-    "prediction": "origin outputs", 
-    "retrieve_count": 0, 
-    "generate_count": 1, 
-    "hallucinated_count": 0, 
-    "token_count": 64, 
+    "qid": "question id",
+    "prediction": "origin outputs",
+    "retrieve_count": 0,
+    "generate_count": 1,
+    "hallucinated_count": 0,
+    "token_count": 64,
     "sentence_count": 5
 }
 ```
@@ -192,9 +192,9 @@ The elements in `details.txt` are as follows:
 
 ```json
 {
-    "qid": "question id", 
-    "final_pred": "the output used for evaluation after extraction", 
-    "EM": "EM result", 
+    "qid": "question id",
+    "final_pred": "the output used for evaluation after extraction",
+    "EM": "EM result",
     "F1": "F1 result"
 }
 ```

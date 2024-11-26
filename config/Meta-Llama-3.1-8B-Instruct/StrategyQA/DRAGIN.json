@@ -1,6 +1,6 @@
 {
-    "model_name_or_path": "/group_homes/our_llm_domain/home/share/open_models/llama/Meta-Llama-3.1-8B-Instruct",
-    "bge_model_name_or_path": "/group_homes/our_llm_domain/home/share/open_models/bge/bge-reranker-base",
+    "model_name_or_path": "/home/yhliu/models/open_models/llama/Meta-Llama-3.1-8B-Instruct",
+    "bge_model_name_or_path": "/home/yhliu/models/open_models/bge/bge-reranker-base",
     "method": "dragin",
     "dataset": "strategyqa",
     "data_path": "data/strategyqa",

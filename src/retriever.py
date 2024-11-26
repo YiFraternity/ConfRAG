@@ -419,7 +419,7 @@ class BGEReranker:
         return reranker_docids, reranker_doc_titles, reranker_docs
 
 if __name__ == "__main__":
-    model_name_or_path = '/home/liuyh0916/models/open_models/bge-reranker-base'
+    model_name_or_path = '/home/yhliu/models/open_models/bge/bge-reranker-base'
     index_name = 'wiki'
 
     # tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
@@ -429,8 +429,7 @@ if __name__ == "__main__":
     #     engine = "elasticsearch",
     # )
     queries = [
-        'Which country the director of film One Law For The Woman is from?',
-        'hello, I love you',
+        'The football manager who recruited David Beckham managed Manchester United during what timeframe? David Beckham was recruited by Manchester United by Alex Ferguson.',
     ]
     retriever = BGEReranker(model_name_or_path, index_name=index_name)
     docs = retriever.retrieve(queries, topk=5)
